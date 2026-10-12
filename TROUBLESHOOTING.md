@@ -253,7 +253,8 @@ grep -c 'category=keyboard' $P/drive_c/users/$U/Temp/uu-input-broker.log
 
 ## 15. 双屏「扩展」时，远端画面像两个屏幕叠在一起
 
-> ⚠️ **本条给出的「跟随桌面总尺寸」修复已于 2026-10-12 14:09 回退**：把整块桌面当画布后，客户端只能在窗口里等比缩小显示，画面与字体过小；拔掉扩展屏时也不能马上自适应。当前默认是 `UURB_RESOLUTION=1920x1200` + `UURB_FOLLOW_DESKTOP_RESOLUTION=off`（多屏时远端只看到桌面左上角一块）。完整记录见 [`DUAL-MONITOR.md`](DUAL-MONITOR.md)。
+> ⚠️ **本条给出的「跟随桌面总尺寸」修复已于 2026-10-12 14:09 回退**：把整块桌面当画布后，客户端只能在窗口里等比缩小显示，画面与字体过小；拔掉扩展屏时也不能马上自适应。
+> **现在的解法是第 16 条：把中继裁剪到单块显示器（默认主屏）**。完整记录见 [`DUAL-MONITOR.md`](DUAL-MONITOR.md)。
 
 **现象**：笔记本外接一块屏、设为"扩展"后，远端客户端看到的画面里，
 外接屏的内容和笔记本屏的内容糊在同一幅画里（其实是上下两块屏被裁到一张图上）。
@@ -312,6 +313,44 @@ grep rfbEncodingExtDesktopSize ~/.local/state/uu-remote-bridge/desktop-x11vnc.lo
 
 ---
 
+## 16. 双屏扩展时，远端想"只看笔记本屏"（主屏）
+
+**现象 / 需求**：外接屏设为扩展后，远端画面里主屏被挤到看不见的位置，
+想在内屏上用控制中心关掉外接屏却点不到 —— 等于没法用。
+
+**根因**：中继送的是整块 root window（两块屏 1922×2280），而画布只有单屏大小，
+TigerVNC 只显示左上角，露出来的恰好是**外接屏**（它排在 `+2+0`）。
+
+**解法**：把中继裁剪到**主屏**（`xrandr --listmonitors` 里带 `*` 的那块）。
+
+```bash
+# ~/.config/uu-remote-bridge/environment
+UURB_RELAY_CLIP=auto            # off | auto | WxH+X+Y
+rrs                             # 重启桥接
+```
+
+桥接会把同一几何同时交给 x11vnc（`-clip`）和注入助手（`uu-x11-input --clip`），
+所以**画面和点击位置都对**；主屏几何变化（比如你在远控里把扩展屏关掉）时，
+守护逻辑连续 3 次检测到稳定变化就会重启桥接自动重新对齐。
+
+**验证**：
+
+```bash
+# 中继声明的帧尺寸 = 主屏尺寸（本机 1920x1200），不是 1922x2280
+grep rfbEncodingExtDesktopSize ~/.local/state/uu-remote-bridge/desktop-x11vnc.log | tail -1
+DISPLAY=:0 xrandr --listmonitors
+# 坐标映射验收测试（需要 gcc / xvfb / xdotool）
+bash ~/Desktop/uu-remote-ubuntu-bridge/scripts/test-x11-input-clip.sh
+```
+
+**注意**：
+
+- 想恢复"整块桌面都送"就把 `UURB_RELAY_CLIP` 改回 `off`（会回到裁切左上角的表现）；
+- 想固定送某一块屏，可以直接写 `UURB_RELAY_CLIP=1920x1080+2+0`；
+- UU 客户端自带的"屏幕页签"在本架构下用不了（被控端是 Linux/Wine，见 `DUAL-MONITOR.md` 第七节）。
+
+---
+
 ## 附：改动正确性自检（每次改完跑一遍）
 
 ```bash
@@ -337,7 +376,9 @@ rrp && ls -l ~/uu-after.png
 # 5) 画布尺寸（多屏时必看）
 grep UURB_RESOLUTION ~/.config/uu-remote-bridge/environment
 DISPLAY=:0 xdpyinfo | grep dimensions
-#   当前约定：画布固定为单屏尺寸 1920x1200，与桌面总尺寸不一致是【正常】的
-#   —— 中继送整屏、画布只显示左上角一块。改成"跟随整桌面"的方案已回退（见 DUAL-MONITOR.md）。
+#   当前约定：中继裁剪到主屏（UURB_RELAY_CLIP=auto），画布等于主屏尺寸（1920x1200），
+#   与桌面总尺寸不一致是【正常】的。
+grep UURB_RELAY_CLIP ~/.config/uu-remote-bridge/environment
+DISPLAY=:0 xrandr --listmonitors        # 带 * 的那块 = 主屏 = 远端能看到的屏
 #   判断桌面尺寸别用 xdotool getdisplaygeometry，它只报主屏！
 ```

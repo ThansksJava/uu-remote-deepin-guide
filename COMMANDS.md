@@ -199,13 +199,15 @@ sha256sum $REPO/build/compat/uu-input-bridge.dll $P/compat/uu-input-bridge.dll
 |---|---|---|
 | `UURB_DESKTOP_RELAY` | `vnc` | 中继方案，Deepin 下必须是 `vnc` |
 | `UURB_DESKTOP_TARGET` | `:0` | 被控的真实桌面 |
+| `UURB_RELAY_CLIP` | `auto` | ★ 中继只送一块屏：`auto`=主屏（笔记本内屏）/ `off`=整块桌面 / `WxH+X+Y`=指定屏 |
 | `UURB_KEYBOARD_ROUTE` | `x11` | ★ 键盘走 X11；改成 `rdp` 会导致电脑端打不了字 |
 | `UURB_INPUT_ROUTE` | `x11` | ★ 鼠标走 X11（本移植新增，DLL 默认已是走 broker）；`direct` 才会退回 Wine |
 | `UURB_CURSOR_GUARD` | `on` | ★ 让电脑客户端能看到鼠标指针（默认 `off`） |
 | `UURB_VNC_GRAB_KEYBOARD` | `on` | x11vnc 抓键盘 |
 | `UURB_PHYSICAL_KEY_DELAY_MS` | `0` | 按键节奏；若个别应用漏键可试着调到 `8~20` |
 
-> `config/environment` 里的 `UURB_RESOLUTION=1920x1200` 是**本机实测分辨率**，换机后按 `xrandr` 的真实值改。
+> `config/environment` 里的 `UURB_RESOLUTION=1920x1200` 是**本机实测分辨率**，换机后按 `xrandr` 的真实值改；
+> 用 `UURB_RELAY_CLIP=auto` 时画布会按主屏尺寸自动对齐，一般不用手改。
 | `UURB_TEXT_KEY_DELAY_MS` | `8` | 手机文本逐字符节奏 |
 
 改完必须 `rrs` 重启才生效。

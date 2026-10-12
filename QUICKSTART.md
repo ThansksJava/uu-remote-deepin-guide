@@ -82,16 +82,16 @@ journalctl --user -u uu-remote-bridge -n 80 --no-pager
 ~/.local/share/wineprefixes/uu-remote/drive_c/users/$(id -un)/Temp/uu-input-broker.log
 ```
 
-4. **只有"远端画面不对"**（例如双屏扩展后像两屏叠在一起、只看到一半）→ 这是双屏下的**已知现象**：
-   画布固定为单屏尺寸 `1920x1200`，而中继送的是整块桌面（两块屏 1922x2280），
-   所以远端只能看到桌面左上角一块。确认现状：
+4. **远端画面不对**（双屏时像两屏叠在一起、或想只看笔记本屏）→ 中继现在**只送主屏**：
 
 ```bash
-grep -E 'UURB_RESOLUTION|FOLLOW' ~/.config/uu-remote-bridge/environment   # 期望 1920x1200 / off
-DISPLAY=:0 xdpyinfo | grep dimensions      # 双屏时是 1922x2280，与画布不同属正常
+grep UURB_RELAY_CLIP ~/.config/uu-remote-bridge/environment   # 期望 auto
+DISPLAY=:0 xrandr --listmonitors        # 带 * 的那块 = 主屏 = 远端能看到的屏
+# 中继声明的帧尺寸应等于主屏尺寸（本机 1920x1200），而不是桌面总尺寸 1922x2280
+grep rfbEncodingExtDesktopSize ~/.local/state/uu-remote-bridge/desktop-x11vnc.log | tail -1
 ```
 
-详细原因，以及曾试过又回退掉的"跟随整桌面"方案，见 `DUAL-MONITOR.md`。
+改回"送整块桌面"：把 `UURB_RELAY_CLIP` 设成 `off` 再 `rrs`。原理与历史方案见 `DUAL-MONITOR.md`。
 
 ---
 
