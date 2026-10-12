@@ -79,8 +79,18 @@ uu-remote login
 ~/.local/state/uu-deepin-port/recover.log         # 自愈脚本
 journalctl --user -u uu-remote-bridge -n 80 --no-pager
 # 输入（点击/键盘）相关：
-~/.local/share/wineprefixes/uu-remote/drive_c/users/fengjie/Temp/uu-input-broker.log
+~/.local/share/wineprefixes/uu-remote/drive_c/users/$(id -un)/Temp/uu-input-broker.log
 ```
+
+4. **只有"远端画面不对"**（例如双屏时像两屏叠在一起、只看到一半）→ 查画布尺寸是否和桌面一致：
+
+```bash
+grep UURB_RESOLUTION ~/.config/uu-remote-bridge/environment
+DISPLAY=:0 xdpyinfo | grep dimensions      # 两者应一致
+```
+
+不一致就把 `UURB_RESOLUTION` 改成 `xdpyinfo` 显示的值、确认
+`UURB_FOLLOW_DESKTOP_RESOLUTION=on`，再 `rrs`（详见 `TROUBLESHOOTING.md` 第 15 条）。
 
 ---
 

@@ -417,6 +417,7 @@ rrs
 uu-remote-deepin-guide/
 ├── README.md                  ← 本文（总览 + 安装步骤 + 验收）
 ├── QUICKSTART.md              ← ★ 极简日常手册（重启后恢复 / 登录失效重登）
+├── DUAL-MONITOR.md            ← 双屏扩展时远端画面异常的原因与修复
 ├── TROUBLESHOOTING.md         ← 每个坑的现象 / 根因 / 修复（含日志证据）
 ├── COMMANDS.md                ← 命令与脚本速查、日志与状态文件路径
 ├── scripts/                   ← 按顺序执行的移植脚本

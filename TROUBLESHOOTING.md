@@ -1,6 +1,7 @@
 # 排障手册 —— 每一个坑：现象 / 根因 / 修复 / 验证
 
 > 日常小问题（重启后恢复、重新登录）先看 [`QUICKSTART.md`](QUICKSTART.md)。
+> 双屏 / 多显示器相关的问题（远端画面被裁、像两屏叠在一起）见 [`DUAL-MONITOR.md`](DUAL-MONITOR.md)。
 
 > 按遇到的先后顺序记录。**每条都附了当时的判断依据与验证命令**，方便以后再遇到同类问题时快速定位。
 > 相关日志路径见 `COMMANDS.md`。
@@ -250,6 +251,70 @@ grep -c 'category=keyboard' $P/drive_c/users/$U/Temp/uu-input-broker.log
 
 ---
 
+## 15. 双屏「扩展」时，远端画面像两个屏幕叠在一起
+
+**现象**：笔记本外接一块屏、设为"扩展"后，远端客户端看到的画面里，
+外接屏的内容和笔记本屏的内容糊在同一幅画里（其实是上下两块屏被裁到一张图上）。
+
+**根因**：中继 x11vnc 抓的是**整个 root window**（两块屏合起来 1922×2280），
+但私有屏 `:20` 的 Xvfb 画布是**安装当天按单屏写死的**（`UURB_RESOLUTION=1920x1200`）。
+尺寸不一致时 TigerVNC **不缩放、只显示左上角** → 裁切。
+
+**关键坑**：`xdotool getdisplaygeometry` 在多屏 Xinerama 下**只返回主屏尺寸**，
+不是桌面总尺寸：
+
+```bash
+DISPLAY=:0 xdotool getdisplaygeometry      # → 1920 1200  ← 只报主屏
+DISPLAY=:0 xdpyinfo | grep dimensions      # → 1922x2280  ← 真正的桌面总尺寸
+```
+
+所以**光打开 `UURB_FOLLOW_DESKTOP_RESOLUTION=on` 不会生效**（算出来和旧画布一样，
+函数认为"无需改动"）。必须先把探测改成 `xdpyinfo`（见下面补丁），再打开开关。
+
+**修复**：
+
+```bash
+# 1) 打补丁：scripts/uu-remote-bridge 的 desktop_geometry() 改用 xdpyinfo 读 root window
+#    （仓库里已改；下面这条命令把补丁部署到真正在跑的那份拷贝）
+cp -f ~/Desktop/uu-remote-ubuntu-bridge/scripts/uu-remote-bridge ~/.local/bin/uu-remote-bridge
+bash -n ~/.local/bin/uu-remote-bridge && echo OK
+
+# 2) 配置：跟随开 + 本次立即生效的尺寸
+python3 - <<'PY'
+import pathlib
+p = pathlib.Path.home()/'.config/uu-remote-bridge/environment'
+t = p.read_text()
+# 把 UURB_RESOLUTION 改成桌面总尺寸，并打开跟随
+PY
+# 编辑这两行：
+#   UURB_RESOLUTION=<桌面总尺寸，如 1922x2280>
+#   UURB_FOLLOW_DESKTOP_RESOLUTION=on
+
+# 3) 重启
+rrs
+```
+
+**验证**：
+
+```bash
+# ① GameViewer 自己上报的屏尺寸（最直接）
+grep -E 'width|height' ~/.local/share/wineprefixes/uu-remote/drive_c/ProgramData/Netease/GameViewer/cache_setting.ini
+#   → width=1922 / height=2280
+
+# ② 中继声明的桌面尺寸
+grep rfbEncodingExtDesktopSize ~/.local/state/uu-remote-bridge/desktop-x11vnc.log | tail -1
+#   → Sending rfbEncodingExtDesktopSize for size (1922x2280)
+```
+
+以后插拔屏/改排列**不用再手动改**：守护逻辑发现尺寸连续 3 次稳定变化后会自己重启对齐（约 15 秒）。
+只想远控单屏的话，桥接目前不支持 `-clip`，最省事是在 DDE 里把另一块屏关掉。
+
+> 本机实测：修复前后各做了一次逐像素复现，
+> 裁切假设 PSNR 41.1 dB、完整桌面假设 PSNR 39.8 dB —— 结论确凿。证据见
+> `~/uu-双屏诊断/诊断说明.md`。
+
+---
+
 ## 附：改动正确性自检（每次改完跑一遍）
 
 ```bash
@@ -271,4 +336,9 @@ tail -1 "$P/drive_c/users/$U/Temp/uu-input-broker.log"
 
 # 4) 画面（客户端视角）
 rrp && ls -l ~/uu-after.png
+
+# 5) 画布尺寸 vs 桌面尺寸（多屏/改分辨率后一定要看，两者必须一致）
+grep UURB_RESOLUTION ~/.config/uu-remote-bridge/environment
+DISPLAY=:0 xdpyinfo | grep dimensions
+#   注意：别用 xdotool getdisplaygeometry 判断，它只报主屏！
 ```
