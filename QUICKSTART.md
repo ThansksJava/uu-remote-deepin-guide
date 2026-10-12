@@ -82,15 +82,16 @@ journalctl --user -u uu-remote-bridge -n 80 --no-pager
 ~/.local/share/wineprefixes/uu-remote/drive_c/users/$(id -un)/Temp/uu-input-broker.log
 ```
 
-4. **只有"远端画面不对"**（例如双屏时像两屏叠在一起、只看到一半）→ 查画布尺寸是否和桌面一致：
+4. **只有"远端画面不对"**（例如双屏扩展后像两屏叠在一起、只看到一半）→ 这是双屏下的**已知现象**：
+   画布固定为单屏尺寸 `1920x1200`，而中继送的是整块桌面（两块屏 1922x2280），
+   所以远端只能看到桌面左上角一块。确认现状：
 
 ```bash
-grep UURB_RESOLUTION ~/.config/uu-remote-bridge/environment
-DISPLAY=:0 xdpyinfo | grep dimensions      # 两者应一致
+grep -E 'UURB_RESOLUTION|FOLLOW' ~/.config/uu-remote-bridge/environment   # 期望 1920x1200 / off
+DISPLAY=:0 xdpyinfo | grep dimensions      # 双屏时是 1922x2280，与画布不同属正常
 ```
 
-不一致就把 `UURB_RESOLUTION` 改成 `xdpyinfo` 显示的值、确认
-`UURB_FOLLOW_DESKTOP_RESOLUTION=on`，再 `rrs`（详见 `TROUBLESHOOTING.md` 第 15 条）。
+详细原因，以及曾试过又回退掉的"跟随整桌面"方案，见 `DUAL-MONITOR.md`。
 
 ---
 

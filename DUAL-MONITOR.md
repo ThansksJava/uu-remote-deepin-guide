@@ -1,9 +1,12 @@
-# 双屏「扩展」时远端画面异常：原因与修复
+# 双屏「扩展」时远端画面异常：原因、尝试与回退
 
 > 本文由 `~/uu-双屏诊断/诊断说明.md` 摘出（去掉本地截图）。
 
-> 诊断时间：2026-10-12 13:36
-> 修复时间：2026-10-12 13:53（已生效，见第四节验证）
+> **⚠️ 当前状态：文中的「跟随桌面总尺寸」修复已于 2026-10-12 14:09 回退**（见文末「六、回退记录」）。
+> 现在生效的是：画布 `1920x1200` + `UURB_FOLLOW_DESKTOP_RESOLUTION=off`；
+> 下面「一、结论」里的**原因仍然成立**，但「修法」已不再启用。
+
+> 诊断：2026-10-12 13:36 ｜ 首次修复：13:53 ｜ 回退：14:09
 > 被控机：本机（Deepin 25，X11 会话，桌面 `:0`）
 
 ---
@@ -16,13 +19,13 @@
 于是"外接屏整屏 + 内屏最上面 120 行"被塞进同一幅画面；两块屏又是同一张壁纸，
 看起来就像两个屏幕叠在了一起。
 
-**修法**：把画布改成和桌面一样大（1922×2280），并打开"跟随桌面"开关，让以后插拔屏自动对齐。
+**当时的修法（⚠️ 已回退）**：把画布改成和桌面一样大（1922×2280），并打开"跟随桌面"开关，让以后插拔屏自动对齐。
 
 ---
 
 ## 二、本机实测数据
 
-| 项 | 原来 | 现在（修复后） | 依据 |
+| 项 | 原来 | 曾改成（已回退） | 依据 |
 |---|---|---|---|
 | 外接屏 DP-1-2 | 1920×1080 **+2+0**（在上） | 同左 | `xrandr --listmonitors` |
 | 内屏 eDP-1 | 1920×1200 **+0+1080**（在下） | 同左 | `xrandr --listmonitors` |
@@ -201,3 +204,45 @@ DISPLAY=:97 ffmpeg -f x11grab -video_size 1922x2280 -i :97.0 -frames:v 1 -y /tmp
 DISPLAY=:0 XAUTHORITY=$HOME/.Xauthority ffmpeg -f x11grab -video_size 1922x2280 -i :0.0 -frames:v 1 -y /tmp/real.png
 ffmpeg -i /tmp/real.png -i /tmp/after.png -lavfi psnr -f null -   # 期望 ~40 dB
 ```
+
+---
+
+## 六、回退记录（2026-10-12 14:09）
+
+**为什么回退**（实际体验）：
+
+1. **画面太小**：把整块桌面（1922×2280）当画布后，客户端只能在窗口里等比缩小显示，
+   字和图都过小，反而不如原来"裁切"看得清。
+2. **断屏不自适应**：拔掉扩展屏后画布不会立刻跟着变，要等守护逻辑连续判定稳定后重启对齐，
+   体感上就是"不自动"。
+
+**回退了什么**：
+
+- `~/.config/uu-remote-bridge/environment`：恢复 `UURB_RESOLUTION=1920x1200`、`UURB_FOLLOW_DESKTOP_RESOLUTION=off`
+- `scripts/uu-remote-bridge` 的 `desktop_geometry()` 恢复用 `xdotool`（提交 `448700c` 是 `77e2d36` 的 revert）
+- 部署：`cp -f scripts/uu-remote-bridge ~/.local/bin/uu-remote-bridge`，然后重启服务
+
+**记录保留在哪**：本文件 + `TROUBLESHOOTING.md` 第 15 条 + 桥接仓库提交 `77e2d36`（尝试）/ `448700c`（回退）。
+
+**想重新启用**：
+
+```bash
+git -C ~/Desktop/uu-remote-ubuntu-bridge revert -n 448700c     # 取回 xdpyinfo 探测补丁
+cp -f ~/Desktop/uu-remote-ubuntu-bridge/scripts/uu-remote-bridge ~/.local/bin/uu-remote-bridge
+# environment: UURB_RESOLUTION=<桌面总尺寸> + UURB_FOLLOW_DESKTOP_RESOLUTION=on
+rrs
+```
+
+---
+
+## 七、为什么用不了 UU 自带的「多屏选择」
+
+UU 远程的"顶部屏幕页签 / 切换显示器"要求**被控端是 Windows 10 及以上或 macOS 11 及以上**
+（官方帮助 `https://uuyc.163.com/help/multiscreen.html`，且多屏映射目前**仅支持被控端为 Windows**）。
+本机是 Linux 被控端，UU 跑在 Wine 里：它眼里的"显示器"只有一个 —— 私有屏 `:20` 的那块 Xvfb 画布，
+所以客户端不会出现两个屏幕的页签。真实的两块物理屏是在**中继层**（x11vnc 抓 `:0` 的 root window）
+才被合成一张画面的。
+
+**可行的替代方向（未实装）**：让中继只送某一块屏 —— 给 x11vnc 加 `-clip WxH+X+Y`，
+并把画布与输入映射同步改成该屏的几何。这样"选屏"落在主机侧（一条命令切换），
+但必须同时给注入侧 `uu-x11-input` 加坐标偏移，否则点击位置会错位。

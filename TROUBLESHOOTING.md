@@ -253,6 +253,8 @@ grep -c 'category=keyboard' $P/drive_c/users/$U/Temp/uu-input-broker.log
 
 ## 15. 双屏「扩展」时，远端画面像两个屏幕叠在一起
 
+> ⚠️ **本条给出的「跟随桌面总尺寸」修复已于 2026-10-12 14:09 回退**：把整块桌面当画布后，客户端只能在窗口里等比缩小显示，画面与字体过小；拔掉扩展屏时也不能马上自适应。当前默认是 `UURB_RESOLUTION=1920x1200` + `UURB_FOLLOW_DESKTOP_RESOLUTION=off`（多屏时远端只看到桌面左上角一块）。完整记录见 [`DUAL-MONITOR.md`](DUAL-MONITOR.md)。
+
 **现象**：笔记本外接一块屏、设为"扩展"后，远端客户端看到的画面里，
 外接屏的内容和笔记本屏的内容糊在同一幅画里（其实是上下两块屏被裁到一张图上）。
 
@@ -271,28 +273,23 @@ DISPLAY=:0 xdpyinfo | grep dimensions      # → 1922x2280  ← 真正的桌面�
 所以**光打开 `UURB_FOLLOW_DESKTOP_RESOLUTION=on` 不会生效**（算出来和旧画布一样，
 函数认为"无需改动"）。必须先把探测改成 `xdpyinfo`（见下面补丁），再打开开关。
 
-**修复**：
+**当时的修复（⚠️ 已于 2026-10-12 14:09 回退，仅作记录；原因与重新启用方法见 [`DUAL-MONITOR.md`](DUAL-MONITOR.md)）**：
 
 ```bash
 # 1) 打补丁：scripts/uu-remote-bridge 的 desktop_geometry() 改用 xdpyinfo 读 root window
-#    （仓库里已改；下面这条命令把补丁部署到真正在跑的那份拷贝）
+#    （该函数只在 UURB_FOLLOW_DESKTOP_RESOLUTION=on 时才会被用到）
 cp -f ~/Desktop/uu-remote-ubuntu-bridge/scripts/uu-remote-bridge ~/.local/bin/uu-remote-bridge
 bash -n ~/.local/bin/uu-remote-bridge && echo OK
 
-# 2) 配置：跟随开 + 本次立即生效的尺寸
-python3 - <<'PY'
-import pathlib
-p = pathlib.Path.home()/'.config/uu-remote-bridge/environment'
-t = p.read_text()
-# 把 UURB_RESOLUTION 改成桌面总尺寸，并打开跟随
-PY
-# 编辑这两行：
-#   UURB_RESOLUTION=<桌面总尺寸，如 1922x2280>
-#   UURB_FOLLOW_DESKTOP_RESOLUTION=on
+# 2) 配置：跟随开 + 本次立即生效的尺寸（把画布改成桌面总尺寸）
+#    UURB_RESOLUTION=<桌面总尺寸，如 1922x2280>
+#    UURB_FOLLOW_DESKTOP_RESOLUTION=on
 
 # 3) 重启
 rrs
 ```
+
+> 回退后这两行恢复为 `UURB_RESOLUTION=1920x1200` + `UURB_FOLLOW_DESKTOP_RESOLUTION=off`。
 
 **验证**：
 
@@ -337,8 +334,10 @@ tail -1 "$P/drive_c/users/$U/Temp/uu-input-broker.log"
 # 4) 画面（客户端视角）
 rrp && ls -l ~/uu-after.png
 
-# 5) 画布尺寸 vs 桌面尺寸（多屏/改分辨率后一定要看，两者必须一致）
+# 5) 画布尺寸（多屏时必看）
 grep UURB_RESOLUTION ~/.config/uu-remote-bridge/environment
 DISPLAY=:0 xdpyinfo | grep dimensions
-#   注意：别用 xdotool getdisplaygeometry 判断，它只报主屏！
+#   当前约定：画布固定为单屏尺寸 1920x1200，与桌面总尺寸不一致是【正常】的
+#   —— 中继送整屏、画布只显示左上角一块。改成"跟随整桌面"的方案已回退（见 DUAL-MONITOR.md）。
+#   判断桌面尺寸别用 xdotool getdisplaygeometry，它只报主屏！
 ```
