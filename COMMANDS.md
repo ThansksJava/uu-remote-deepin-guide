@@ -1,5 +1,7 @@
 # 命令速查 · 网易UU远程 Deepin 25 适配
 
+> 只想知道「重启后怎么恢复」「登录失效怎么重登」→ 看 [`QUICKSTART.md`](QUICKSTART.md)。
+
 > 全部命令均可直接复制；`把 $P` 之类变量先设好（**下面没有写死的用户名 / UID / 主机名 / 分辨率**）：
 > ```bash
 > P=~/.local/share/wineprefixes/uu-remote        # Wine 前缀

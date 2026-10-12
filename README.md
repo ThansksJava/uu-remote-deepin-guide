@@ -4,6 +4,7 @@
 > 记录对象：在 **Deepin 25 (DDE)** 上把官方桥接项目 `uu-remote-ubuntu-bridge`（原本面向 Ubuntu 24.04 + GNOME + gnome-remote-desktop + FreeRDP）移植并完整跑通的全过程。
 > 用途：以后重装系统 / 换机器 / 升级后重新部署，照着这份文档一步步做即可复现。
 > 本目录已把脚本、配置、补丁、预编译组件、自测工具全部收齐，离线也能照着做。
+> **日常用（重启后恢复、重新登录）：直接看 [`QUICKSTART.md`](QUICKSTART.md)，一页搞定，不用翻本文。**
 
 ---
 
@@ -345,6 +346,8 @@ systemctl --user enable uu-remote-bridge.service
 
 ## 六、故障速查（详细版见 `TROUBLESHOOTING.md`）
 
+> 只是「重启后怎么恢复」「登录失效怎么重登」这类日常问题，看 [`QUICKSTART.md`](QUICKSTART.md) 就够了。
+
 | 症状 | 一句话原因 | 快速处理 |
 |---|---|---|
 | 手机/电脑看到一块 UU 自己的窗口，点不动也关不掉 | UU 管理窗压在 TigerVNC 中继之上 | 跑 `rrx`；长期靠已修的脚本自动置顶 |
@@ -413,6 +416,7 @@ rrs
 ```
 uu-remote-deepin-guide/
 ├── README.md                  ← 本文（总览 + 安装步骤 + 验收）
+├── QUICKSTART.md              ← ★ 极简日常手册（重启后恢复 / 登录失效重登）
 ├── TROUBLESHOOTING.md         ← 每个坑的现象 / 根因 / 修复（含日志证据）
 ├── COMMANDS.md                ← 命令与脚本速查、日志与状态文件路径
 ├── scripts/                   ← 按顺序执行的移植脚本
