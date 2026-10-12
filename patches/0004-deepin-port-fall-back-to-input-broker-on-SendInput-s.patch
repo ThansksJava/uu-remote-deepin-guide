@@ -1,0 +1,37 @@
+From 44b54cfcd10c5e66c484b27ee6f385069f89d656 Mon Sep 17 00:00:00 2001
+From: fengjie <fengjie@local>
+Date: Mon, 12 Oct 2026 08:06:42 +0800
+Subject: [PATCH 4/6] deepin-port: fall back to input broker on SendInput soft
+ failure
+
+Wine's SendInput can return the full event count while setting last
+error ERROR_INVALID_WINDOW_HANDLE (1400) once the Wine foreground
+handle goes stale (e.g. after the GameViewer login window closes).
+The previous check only fell back when result != count, so mouse
+button events were silently dropped: the controller could move the
+pointer but never click. Treat any nonzero error from the direct
+call as a failure so the broker repairs focus or uses the direct
+X11 injection route.
+---
+ src/uu_input_bridge.c | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/src/uu_input_bridge.c b/src/uu_input_bridge.c
+index 225ea95..ed2794c 100644
+--- a/src/uu_input_bridge.c
++++ b/src/uu_input_bridge.c
+@@ -267,7 +267,13 @@ static UINT WINAPI bridged_send_input(UINT count, LPINPUT inputs, int size)
+         result = original_send_input(count, inputs, size);
+         error = GetLastError();
+         direct_ms = (DWORD)(GetTickCount64() - direct_started_ms);
+-        if (result != count) {
++        /* Wine can return the full count while still failing the injection:
++         * once the Wine foreground handle goes stale (for example after the
++         * GameViewer login window closes), SendInput reports result == count
++         * with last error ERROR_INVALID_WINDOW_HANDLE (1400) and drops mouse
++         * button events. Treat any nonzero error as a failure so the broker
++         * (relay focus repair or the direct X11 route) still receives it. */
++        if (result != count || error != ERROR_SUCCESS) {
+             broker_started_ms = GetTickCount64();
+             result = send_through_broker(count, inputs, size, &error);
+             broker_ms = (DWORD)(GetTickCount64() - broker_started_ms);

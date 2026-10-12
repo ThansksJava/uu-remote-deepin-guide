@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Restart the UU bridge, then restack the private-display windows and report.
+set -u
+uid="$(id -u)"
+export XDG_RUNTIME_DIR="/run/user/$uid"
+export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus"
+BR="$XDG_RUNTIME_DIR/uu-remote-bridge"
+REPORT="$HOME/uu-stack.txt"
+
+{
+  echo "== $(date '+%T') restart begin =="
+  systemctl --user restart uu-remote-bridge.service
+  echo "restart rc=$?"
+
+  DISP=""
+  for i in $(seq 1 90); do
+    sleep 2
+    if [ -f "$BR/private-display" ]; then
+      DISP="$(cat "$BR/private-display" 2>/dev/null)"
+    fi
+    [ -n "$DISP" ] || continue
+    R="$(DISPLAY="$DISP" XAUTHORITY="$BR/Xauthority" xdotool search --onlyvisible --name 'TigerVNC' 2>/dev/null | tail -1)"
+    if [ -n "$R" ]; then
+      echo "relay window=$R after $((i*2))s (display $DISP)"
+      break
+    fi
+  done
+
+  if [ -n "$DISP" ]; then
+    export DISPLAY="$DISP"
+    export XAUTHORITY="$BR/Xauthority"
+    for id in $(xdotool search --onlyvisible --class gameviewer 2>/dev/null); do
+      /usr/bin/wmctrl -i -r "$id" -b add,below 2>/dev/null && \
+        echo "pushed below: $id ($(xdotool getwindowname "$id" 2>/dev/null))"
+    done
+    R="$(xdotool search --onlyvisible --name 'TigerVNC' 2>/dev/null | tail -1)"
+    [ -n "$R" ] && xdotool windowraise "$R" 2>/dev/null
+    echo "-- visible windows on $DISP --"
+    for id in $(xdotool search --onlyvisible --name '.' 2>/dev/null); do
+      n="$(xdotool getwindowname "$id" 2>/dev/null)"
+      [ -n "$n" ] && echo "$id | $n"
+    done
+    echo "-- children (stacking) --"
+    /usr/bin/xwininfo -root -children 2>/dev/null | sed -n '1,40p'
+  fi
+  echo "== done =="
+} > "$REPORT" 2>&1
+
+echo "rrx done -> $REPORT"

@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Dump the private display's window stacking order (bottom -> top) to ~/uu-stack.txt.
+set -u
+uid="$(id -u)"
+export XDG_RUNTIME_DIR="/run/user/$uid"
+export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus"
+BR="$XDG_RUNTIME_DIR/uu-remote-bridge"
+REPORT="$HOME/uu-stack.txt"
+DISP="$(cat "$BR/private-display" 2>/dev/null)"
+export DISPLAY="${DISP:-:20}"
+export XAUTHORITY="$BR/Xauthority"
+
+{
+  echo "== $(date '+%T') dump =="
+  echo "display=$DISPLAY"
+  echo "bridge: $(systemctl --user is-active uu-remote-bridge.service)"
+  echo "-- _NET_CLIENT_LIST_STACKING (bottom -> top) --"
+  order="$(xprop -root _NET_CLIENT_LIST_STACKING 2>/dev/null)"
+  for id in $(printf '%s\n' "$order" | sed 's/^[^#]*#//; s/,/ /g'); do
+    n="$(xdotool getwindowname "$id" 2>/dev/null)"
+    [ -n "$n" ] && echo "$id | $n"
+  done
+  echo "-- visible windows --"
+  for id in $(xdotool search --onlyvisible --name '.' 2>/dev/null); do
+    n="$(xdotool getwindowname "$id" 2>/dev/null)"
+    [ -n "$n" ] && echo "$id | $n"
+  done
+  echo "== end =="
+} > "$REPORT" 2>&1
+echo "rrd done -> $REPORT"

@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Restart the UU Remote bridge user service from an interactive shell.
+set -u
+export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u)/bus"
+systemctl --user restart uu-remote-bridge.service
+echo "uurr restart rc=$?"

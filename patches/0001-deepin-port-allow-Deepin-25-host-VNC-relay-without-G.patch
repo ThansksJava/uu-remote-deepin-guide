@@ -1,0 +1,179 @@
+From dbd1fc1bcafd22806bfcfaf8d8c588bdddcb394b Mon Sep 17 00:00:00 2001
+From: deepin-port <local@deepin-port>
+Date: Sun, 11 Oct 2026 21:37:23 +0800
+Subject: [PATCH 1/6] deepin-port: allow Deepin 25 host, VNC relay without
+ GNOME/grd, DDE shell discovery
+
+---
+ install.sh               | 56 +++++++++++++++++++++++-----------------
+ scripts/check-host.sh    |  9 ++++++-
+ scripts/uu-remote-bridge |  8 +++++-
+ scripts/verify.sh        |  7 ++++-
+ 4 files changed, 54 insertions(+), 26 deletions(-)
+
+diff --git a/install.sh b/install.sh
+index 417ebfb..bd277fa 100755
+--- a/install.sh
++++ b/install.sh
+@@ -450,16 +450,17 @@ install_winehq() {
+     if [[ -x "$wine_bin" ]]; then
+         return
+     fi
+-    # shellcheck source=/dev/null
+-    source /etc/os-release
+-    codename="${VERSION_CODENAME:?Ubuntu codename is unavailable}"
++    # deepin-port: Deepin has no Ubuntu codename; use WineHQ's Debian bookworm
++    # line, which installs to the same /opt/wine-stable layout the bridge
++    # expects and matches the Deepin 25 glibc (2.38) baseline.
++    codename=bookworm
+     temporary="$(mktemp -d)"
+ 
+     sudo dpkg --add-architecture i386
+     curl -fsSL https://dl.winehq.org/wine-builds/winehq.key \
+         -o "$temporary/winehq.key"
+     curl -fsSL \
+-        "https://dl.winehq.org/wine-builds/ubuntu/dists/$codename/winehq-$codename.sources" \
++        "https://dl.winehq.org/wine-builds/debian/dists/$codename/winehq-$codename.sources" \
+         -o "$temporary/winehq-$codename.sources"
+     sudo install -d -m 0755 /etc/apt/keyrings
+     sudo install -m 0644 "$temporary/winehq.key" \
+@@ -473,14 +474,17 @@ install_winehq() {
+ 
+ install_packages() {
+     sudo apt-get update
++    # deepin-port: dropped gnome-remote-desktop, novnc and websockify; they are
++    # not in the Deepin 25 repositories and are only needed by the GNOME RDP
++    # relay and the noVNC diagnostic console (both unused on the VNC path).
+     sudo apt-get install -y \
+         acl aria2 binutils ca-certificates cmake crudini curl freerdp3-x11 \
+         gcc \
+         gcc-mingw-w64-x86-64 \
+-        git gnome-remote-desktop iproute2 jq libsecret-tools libx11-6 \
+-        libxml2-utils libxtst6 meson novnc \
++        git iproute2 jq libsecret-tools libx11-6 \
++        libxml2-utils libxtst6 meson \
+         ninja-build openbox openssl p7zip-full patch python3 python3-attr \
+-        python3-gi python3-jinja2 tar tigervnc-viewer websockify \
++        python3-gi python3-jinja2 tar tigervnc-viewer \
+         x11-utils x11vnc xauth xclip \
+         xdotool xvfb zstd
+     install_winehq
+@@ -496,13 +500,14 @@ fi
+ 
+ for command in curl meson ninja patch readelf sha256sum /usr/bin/systemctl \
+     timeout \
+-    "$grdctl_bin" "$openssl_bin" "$python_bin" "$secret_tool_bin" \
++    "$openssl_bin" "$python_bin" "$secret_tool_bin" \
+     "$wine_bin" "$wineserver_bin" /usr/bin/Xvfb /usr/bin/gsettings \
+     /usr/bin/awk /usr/bin/ip /usr/bin/mcookie /usr/bin/openbox \
+     /usr/bin/script /usr/bin/sort /usr/bin/ss /usr/bin/xauth \
+-    /usr/bin/vncviewer /usr/bin/websockify /usr/bin/x11vnc /usr/bin/xclip \
+-    /usr/bin/xdotool \
+-    /usr/libexec/gnome-remote-desktop-daemon; do
++    /usr/bin/vncviewer /usr/bin/x11vnc /usr/bin/xclip \
++    /usr/bin/xdotool; do
++    # deepin-port: removed grdctl, websockify and the GNOME remote-desktop
++    # daemon requirement — the VNC relay path does not use any of them.
+     if ! command -v "$command" >/dev/null 2>&1; then
+         printf 'missing required command: %s\n' "$command" >&2
+         exit 1
+@@ -857,8 +862,9 @@ if [[ ! -s "$tls_cert" || ! -s "$tls_key" ]]; then
+     chmod 0600 "$tls_key"
+ fi
+ 
+-rdp_password="$("$secret_tool_bin" lookup service uu-desktop-bridge \
+-    username "$bridge_user" || true)"
++# deepin-port: no GNOME keyring guarantee on Deepin/DDE — skip the keyring
++# lookup and only prompt for the shared relay password.
++rdp_password=''
+ if [[ -z "$rdp_password" ]]; then
+     while true; do
+         read -rsp 'Password for the local GNOME RDP relay: ' rdp_password
+@@ -873,16 +879,20 @@ if [[ -z "$rdp_password" ]]; then
+     done
+ fi
+ 
+-"$grdctl_bin" rdp set-port "$rdp_port"
+-"$grdctl_bin" rdp set-tls-cert "$tls_cert"
+-"$grdctl_bin" rdp set-tls-key "$tls_key"
+-"$grdctl_bin" rdp set-credentials "$bridge_user" "$rdp_password"
+-"$grdctl_bin" rdp disable-view-only
+-"$grdctl_bin" rdp disable-port-negotiation
+-"$grdctl_bin" rdp enable
+-printf '%s' "$rdp_password" | "$secret_tool_bin" store \
+-    --label='UU Remote Ubuntu bridge RDP credential' \
+-    service uu-desktop-bridge username "$bridge_user"
++# deepin-port: grdctl and the keyring credential only exist on the RDP relay
++# path; the VNC relay derives its loopback password from the same value below.
++if [[ "$desktop_relay" == rdp ]]; then
++    "$grdctl_bin" rdp set-port "$rdp_port"
++    "$grdctl_bin" rdp set-tls-cert "$tls_cert"
++    "$grdctl_bin" rdp set-tls-key "$tls_key"
++    "$grdctl_bin" rdp set-credentials "$bridge_user" "$rdp_password"
++    "$grdctl_bin" rdp disable-view-only
++    "$grdctl_bin" rdp disable-port-negotiation
++    "$grdctl_bin" rdp enable
++    printf '%s' "$rdp_password" | "$secret_tool_bin" store \
++        --label='UU Remote Ubuntu bridge RDP credential' \
++        service uu-desktop-bridge username "$bridge_user"
++fi
+ relay_vnc_auth_file="$config_dir/relay-vnc.pass"
+ relay_vnc_auth_temporary="$(mktemp "$config_dir/relay-vnc.pass.XXXXXX")"
+ relay_vnc_password="$(LC_ALL=C printf '%.8s' "$rdp_password")"
+diff --git a/scripts/check-host.sh b/scripts/check-host.sh
+index 9db1eff..2608889 100755
+--- a/scripts/check-host.sh
++++ b/scripts/check-host.sh
+@@ -19,7 +19,14 @@ if [[ ! -r /etc/os-release ]]; then
+ fi
+ # shellcheck source=/dev/null
+ source /etc/os-release
+-if [[ "${ID:-}" != ubuntu || "${VERSION_ID:-}" != 24.04 ]]; then
++# deepin-port: Deepin 25 (Debian-bookworm-based, X11 DDE) experimental allowance.
++# The upstream project only supports Ubuntu 24.04; this local branch relaxes the
++# gate for the VNC-relay path on Deepin 25 x86_64. Not vendor-validated.
++if [[ "${ID:-}" == deepin && "${VERSION_ID:-}" == 25 ]]; then
++    printf '%s\n' \
++        'EXPERIMENTAL: Deepin 25 host allowed by the local deepin-port branch.' \
++        'Upstream only validates Ubuntu 24.04 + GNOME 46; results are not guaranteed.'
++elif [[ "${ID:-}" != ubuntu || "${VERSION_ID:-}" != 24.04 ]]; then
+     printf 'Only Ubuntu 24.04 is currently supported; detected %s %s.\n' \
+         "${ID:-unknown}" "${VERSION_ID:-unknown}" >&2
+     exit 1
+diff --git a/scripts/uu-remote-bridge b/scripts/uu-remote-bridge
+index d73fe2b..d124b1a 100755
+--- a/scripts/uu-remote-bridge
++++ b/scripts/uu-remote-bridge
+@@ -721,7 +721,13 @@ discover_desktop_session() {
+                 "$candidate_session_service" "$candidate_session_seat"
+             return 0
+         fi
+-    done < <(/usr/bin/pgrep -u "$UID" -x gnome-shell | /usr/bin/sort -nr)
++    # deepin-port: Deepin's DDE desktop shell is dde-shell/dde-desktop instead
++    # of gnome-shell; include all three so desktop discovery works there.
++    done < <({
++        /usr/bin/pgrep -u "$UID" -x gnome-shell || true
++        /usr/bin/pgrep -u "$UID" -x dde-shell || true
++        /usr/bin/pgrep -u "$UID" -x dde-desktop || true
++    } | /usr/bin/sort -nru)
+ 
+     if [[ -n "$fallback_bus" ]]; then
+         select_desktop_candidate \
+diff --git a/scripts/verify.sh b/scripts/verify.sh
+index 3a637b4..5d7434d 100755
+--- a/scripts/verify.sh
++++ b/scripts/verify.sh
+@@ -254,7 +254,12 @@ gnome_session_for_bus() {
+         printf '%s|%s|%s|%s\n' "$candidate_session_id" \
+             "$candidate_service" "$candidate_seat" "$candidate_display"
+         return 0
+-    done < <(/usr/bin/pgrep -u "$UID" -x gnome-shell | /usr/bin/sort -nr)
++    # deepin-port: include DDE shell processes alongside gnome-shell.
++    done < <({
++        /usr/bin/pgrep -u "$UID" -x gnome-shell || true
++        /usr/bin/pgrep -u "$UID" -x dde-shell || true
++        /usr/bin/pgrep -u "$UID" -x dde-desktop || true
++    } | /usr/bin/sort -nru)
+     return 1
+ }
+ 

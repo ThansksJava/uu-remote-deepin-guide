@@ -1,0 +1,25 @@
+[Unit]
+Description=UU Remote bridge for the live GNOME desktop
+After=default.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+EnvironmentFile=-%h/.config/uu-remote-bridge/environment
+ExecStart=%h/.local/bin/uu-remote-bridge
+# A clean child/signal exit is still an outage; systemctl stop remains final.
+Restart=always
+RestartSec=30
+TimeoutStopSec=15
+KillMode=control-group
+LimitNOFILE=65536
+# The relay normally stays below 2 GiB. Contain an upstream Wine/thread leak
+# inside this restartable service instead of allowing it to stall the desktop.
+MemoryHigh=3G
+MemoryMax=4G
+MemorySwapMax=2G
+TasksMax=1024
+OOMPolicy=stop
+
+[Install]
+WantedBy=default.target

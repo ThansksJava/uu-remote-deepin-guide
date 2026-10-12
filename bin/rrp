@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Capture the private display (what a controller sees): before and after raising the relay.
+# 分辨率不再写死：从目标屏的 xdpyinfo 实时读（私有屏大小 = 中继分辨率）。
+set -u
+GUIDE_DIR="${UURB_GUIDE_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
+if [ -f "$GUIDE_DIR/config/guide.env" ]; then
+    # shellcheck disable=SC1091
+    . "$GUIDE_DIR/config/guide.env"
+fi
+uid="$(id -u)"
+RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$uid}"
+BR="$RUNTIME_DIR/uu-remote-bridge"
+if type uurb_private_display >/dev/null 2>&1; then
+    DISP="$(uurb_private_display)"
+else
+    DISP="$(cat "$BR/private-display" 2>/dev/null || echo :20)"
+fi
+export DISPLAY="$DISP"
+export XAUTHORITY="$BR/Xauthority"
+
+RES="$(xdpyinfo 2>/dev/null | awk '/dimensions:/{print $2; exit}')"
+RES="${RES:-$(type uurb_resolution >/dev/null 2>&1 && uurb_resolution || echo 1920x1080)}"
+echo "rrp capture display=$DISPLAY size=$RES"
+
+shot() {
+  /usr/bin/ffmpeg -hide_banner -loglevel error -f x11grab \
+    -video_size "$RES" -i "$DISPLAY.0" -frames:v 1 -y "$1" 2>/dev/null
+}
+
+shot "$HOME/uu-before.png"
+R="$(xdotool search --onlyvisible --name 'TigerVNC' 2>/dev/null | tail -1)"
+if [ -n "$R" ]; then
+  xdotool windowraise "$R" 2>/dev/null
+  xdotool windowactivate "$R" 2>/dev/null
+fi
+sleep 1
+shot "$HOME/uu-after.png"
+echo "rrp done relay=$R display=$DISPLAY"

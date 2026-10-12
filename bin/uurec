@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# 抓 UU 登录二维码 → <LOG_DIR>/login.png
+# 委托给指南目录里的 scripts/09-clickbtn.sh；指南目录按下列顺序查找，
+# 也可以直接用 UURB_GUIDE_DIR=/path/to/uu-remote-deepin-guide 指定。
+set -u
+SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
+for d in "${UURB_GUIDE_DIR:-}" \
+         "$SELF_DIR/.." \
+         "$HOME/.local/share/uu-remote-deepin-guide" \
+         "$HOME/Desktop/uu-remote-deepin-guide" \
+         "$HOME/uu-remote-deepin-guide"; do
+    if [ -n "$d" ] && [ -f "$d/scripts/09-clickbtn.sh" ]; then
+        exec bash "$d/scripts/09-clickbtn.sh"
+    fi
+done
+echo "找不到 uu-remote-deepin-guide 目录：请 export UURB_GUIDE_DIR=<指南目录>" >&2
+exit 1

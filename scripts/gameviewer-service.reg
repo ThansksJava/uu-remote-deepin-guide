@@ -1,0 +1,9 @@
+[System\\CurrentControlSet\\Services\\GameViewerService] 1791709937
+#time=1dd59609cca959c
+"DisplayName"="GameViewerService"
+"ErrorControl"=dword:00000001
+"ImagePath"=str(2):"\"C:\\Program Files\\Netease\\GameViewer\\GameViewerService.exe\" --service"
+"ObjectName"="LocalSystem"
+"Start"=dword:00000002
+"Type"=dword:00000010
+

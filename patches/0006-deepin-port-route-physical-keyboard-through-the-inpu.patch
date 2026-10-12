@@ -1,0 +1,68 @@
+From bda55a665db9a7afb8e2bc7ca5bd18b2ecb9362f Mon Sep 17 00:00:00 2001
+From: fengjie <fengjie@local>
+Date: Mon, 12 Oct 2026 10:42:41 +0800
+Subject: [PATCH 6/6] deepin-port: route physical keyboard through the input
+ broker
+
+The Deepin port injects input onto the real desktop because its relay is a
+native (Linux) TigerVNC viewer. Mouse events already took the broker path,
+but physical key events were still handed to the Wine input queue, which
+only ever delivers to Wine's own windows: a controller's keystrokes were
+accepted (result == count, error == 0) yet never reached the live desktop,
+so text fields were unreachable from the PC client (the phone client only
+worked because its text commits use the Unicode/clipboard path).
+
+Default physical keys to the broker route as well, mirroring the mouse
+policy; UURB_KEYBOARD_ROUTE=direct restores the Wine queue behaviour.
+---
+ src/uu_input_bridge.c | 30 +++++++++++++++++++++++++++++-
+ 1 file changed, 29 insertions(+), 1 deletion(-)
+
+diff --git a/src/uu_input_bridge.c b/src/uu_input_bridge.c
+index 90eedbd..fa95f13 100644
+--- a/src/uu_input_bridge.c
++++ b/src/uu_input_bridge.c
+@@ -240,6 +240,32 @@ static BOOL mouse_uses_broker(void)
+     return (BOOL)state;
+ }
+ 
++/* Same rationale as the mouse path above: physical key events handed to the
++ * Wine input queue are only ever delivered to Wine's own windows. When the
++ * relay is a native (Linux) viewer such as TigerVNC, a controller's keystrokes
++ * are accepted by Wine (result == count, no error) yet never reach the live
++ * desktop, so text fields stay unreachable. Default the physical keyboard to
++ * the broker route as well; UURB_KEYBOARD_ROUTE=direct restores the Wine
++ * queue path. */
++static BOOL keyboard_uses_broker(void)
++{
++    static volatile LONG cached_state = -1;
++    wchar_t value[16];
++    LONG state;
++
++    state = InterlockedCompareExchange(&cached_state, 0, -1);
++    if (state >= 0)
++        return (BOOL)state;
++
++    state = 1;
++    if (GetEnvironmentVariableW(L"UURB_KEYBOARD_ROUTE", value,
++                               (DWORD)(sizeof(value) / sizeof(value[0]))) > 0 &&
++        lstrcmpiW(value, L"direct") == 0)
++        state = 0;
++    InterlockedExchange(&cached_state, state);
++    return (BOOL)state;
++}
++
+ static UINT WINAPI bridged_send_input(UINT count, LPINPUT inputs, int size)
+ {
+     char line[512];
+@@ -281,7 +307,9 @@ static UINT WINAPI bridged_send_input(UINT count, LPINPUT inputs, int size)
+                                             INPUT_KEYBOARD);
+     mouse_input = !unicode_keyboard && !physical_keyboard &&
+                   contains_input_type(count, inputs, size, INPUT_MOUSE);
+-    if (unicode_keyboard || (mouse_input && mouse_uses_broker())) {
++    if (unicode_keyboard ||
++        (physical_keyboard && keyboard_uses_broker()) ||
++        (mouse_input && mouse_uses_broker())) {
+         broker_started_ms = GetTickCount64();
+         result = send_through_broker(count, inputs, size, &error);
+         broker_ms = (DWORD)(GetTickCount64() - broker_started_ms);
