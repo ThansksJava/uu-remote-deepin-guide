@@ -414,6 +414,32 @@ uu-agent snapshot /tmp/canvas.png && file /tmp/canvas.png   # 画面不受影响
 - **回退**：删掉 drop-in（或改 `UURB_UU_AUDIO=system`）+
   `wine reg delete 'HKCU\Software\Wine\Drivers' /v Audio /f` + 重启服务。
 
+### 17.1 想"麦克风不开 + 还能听到被控端的声音"
+
+先说清一个前提：**桥接（x11vnc 中继）不转发桌面声音**（`/audio-mode:2` 只在 rdp 中继分支）。
+能被听到的声音只可能来自 **UU 自己的音频通道**，而它和麦克风共用上面那个开关 —— 所以 `off` 会让两者一起没。
+
+办法是让 UU 继续用音频，但把它的**采集对象**从"物理麦克风"换成"桌面监听口（monitor）"：
+UU 采集到什么就往外送什么，于是客户端听到的是电脑的声音，而物理麦克风永远不被打开。
+
+```bash
+# 1) 恢复 UU 音频：删掉 20-audio-isolation.conf（或改成 UURB_UU_AUDIO=system），
+#    并撤掉该前缀的音频驱动覆盖：
+WINEPREFIX=~/.local/share/wineprefixes/uu-remote \
+  /opt/wine-stable/bin/wine reg delete 'HKCU\Software\Wine\Drivers' /v Audio /f
+# 2) 把默认输入指向内置声卡的监听口（名字以 wpctl status / pactl list short sources 为准）
+wpctl set-default alsa_output.pci-0000_00_1f.3.analog-stereo.monitor
+systemctl --user daemon-reload && systemctl --user restart uu-remote-bridge.service
+```
+
+注意：
+
+- 动 UU 音频通路有**小概率**让控制端连不上（上游文档记过卡在 `InitPlayout`）；这台机器是远程用的，
+  **别在没人在场确认重连的时候改**。
+- 监听口取的是"过了音量之后"的声音：**被控端声卡静音或音量为 0 时，客户端同样听不到** —— 要听到得把被控端音量打开。
+- 上游 README 警告过把 `PULSE_SOURCE`/`PULSE_SINK` 设成**重复端点名**会让 Wine 枚举 CoreAudio 卡死；
+  本机没有 XRDP 重复端点，风险偏低但仍在，所以优先用 `wpctl set-default`（等价于在声音设置里换设备）。
+
 ---
 
 ## 附：改动正确性自检（每次改完跑一遍）
