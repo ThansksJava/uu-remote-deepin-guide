@@ -351,6 +351,71 @@ bash ~/Desktop/uu-remote-ubuntu-bridge/scripts/test-x11-input-clip.sh
 
 ---
 
+## 17. 被控端麦克风被 UU 常开（想关掉）
+
+**现象**：被控端（装 UU 的那台）的麦克风被持续占用 / 指示灯常亮。
+
+**根因**：UU 每次被连接都会开一路**麦克风采集**（WebRTC 的 `startAudioCapture`）。
+该前缀的 Wine 走 `winepulse.drv`，所以能直接打到物理麦克风。
+
+判定证据（本机实测）：
+
+```bash
+# WirePlumber 的流记忆里能看到 UU 建过的采集流
+grep -E 'Input/Audio:.*(GameViewerServer|网易UU远程服务)' \
+    ~/.local/state/wireplumber/stream-properties
+# 前缀里确实注册了 winepulse 设备
+grep -a 'winepulse.drv\\\\devices' ~/.local/share/wineprefixes/uu-remote/user.reg | head
+```
+
+**解法**：上游已内置开关 `UURB_UU_AUDIO=off` —— 只在 UU 专用 Wine 前缀里屏蔽 `winepulse.drv`，
+不碰系统 / 浏览器 / 其它 Wine 前缀。**但不能单用**：单用会让控制端永远等不到媒体
+（卡在 `AudioDeviceModuleImpl::InitPlayout`），必须配"前缀私有静默 ALSA 后端"。
+
+```bash
+# 1) 静默 ALSA 命名空间（仓库自带模板）
+install -m 0600 ~/Desktop/uu-remote-ubuntu-bridge/config/alsa-null.conf \
+    ~/.config/uu-remote-bridge/alsa-null.conf
+
+# 2) 该前缀的 Wine 音频驱动改 ALSA
+WINEPREFIX=~/.local/share/wineprefixes/uu-remote WINEDEBUG=-all DISPLAY=:0 \
+  /opt/wine-stable/bin/wine reg add 'HKCU\Software\Wine\Drivers' /v Audio /t REG_SZ /d alsa /f
+
+# 3) 放进 systemd drop-in（别只改 environment，见「注意」）
+install -d ~/.config/systemd/user/uu-remote-bridge.service.d
+cat > ~/.config/systemd/user/uu-remote-bridge.service.d/20-audio-isolation.conf <<'EOF'
+[Service]
+Environment="UURB_UU_AUDIO=off"
+Environment="ALSA_CONFIG_PATH=/home/fengjie/.config/uu-remote-bridge/alsa-null.conf"
+EOF
+
+systemctl --user daemon-reload && systemctl --user restart uu-remote-bridge.service
+```
+
+**验证**（重启后）：
+
+```bash
+systemctl --user show -p Environment -p DropInPaths uu-remote-bridge.service
+P=$(pgrep -u "$UID" -f GameViewerServer.exe | head -1)
+tr '\0' '\n' < /proc/$P/environ | grep -E 'UURB_UU_AUDIO|ALSA_CONFIG_PATH|WINEDLLOVERRIDES'   # 应见 winepulse.drv=d
+grep -c winealsa /proc/$P/maps            # >0：Wine 已走 ALSA（有后端，媒体协商不卡）
+ls -l /proc/$P/fd | grep -cE 'snd|pulse|pipewire'   # 期望 0
+pw-dump | grep -icE 'GameViewer|网易UU'             # 期望 0
+cat /proc/asound/card*/pcm*/sub*/status            # 期望全 closed
+uu-agent snapshot /tmp/canvas.png && file /tmp/canvas.png   # 画面不受影响：1920x1200 有内容
+```
+
+**注意**：
+
+- **放 drop-in，别只改 `environment`**：`install.sh` 会整体重写 `~/.config/uu-remote-bridge/environment`，
+  升级成功后**不恢复**自定义项 → 手加的 `UURB_UU_AUDIO`、`UURB_RELAY_CLIP` 会被抹掉；drop-in 才长期生效。
+- **代价**：Wine 音频驱动是单一开关，`off` 会关掉 UU 的**全部**音频 —— 麦克风不再上传，
+  控制端也**听不到被控端声音**。只想关麦克风、保留"听被控端声音"需要另走 WirePlumber 侧（本指南未实现）。
+- **回退**：删掉 drop-in（或改 `UURB_UU_AUDIO=system`）+
+  `wine reg delete 'HKCU\Software\Wine\Drivers' /v Audio /f` + 重启服务。
+
+---
+
 ## 附：改动正确性自检（每次改完跑一遍）
 
 ```bash
@@ -381,4 +446,9 @@ DISPLAY=:0 xdpyinfo | grep dimensions
 grep UURB_RELAY_CLIP ~/.config/uu-remote-bridge/environment
 DISPLAY=:0 xrandr --listmonitors        # 带 * 的那块 = 主屏 = 远端能看到的屏
 #   判断桌面尺寸别用 xdotool getdisplaygeometry，它只报主屏！
+
+# 6) 音频隔离（若已关掉 UU 麦克风采集）
+systemctl --user show -p Environment uu-remote-bridge.service | grep -o 'UURB_UU_AUDIO=[a-z]*'
+AP=$(pgrep -u "$U" -f GameViewerServer.exe | head -1)
+ls -l /proc/$AP/fd 2>/dev/null | grep -cE 'snd|pulse|pipewire'   # 期望 0（UU 没碰任何音频设备）
 ```

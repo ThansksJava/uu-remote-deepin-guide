@@ -203,6 +203,7 @@ sha256sum $REPO/build/compat/uu-input-bridge.dll $P/compat/uu-input-bridge.dll
 | `UURB_KEYBOARD_ROUTE` | `x11` | ★ 键盘走 X11；改成 `rdp` 会导致电脑端打不了字 |
 | `UURB_INPUT_ROUTE` | `x11` | ★ 鼠标走 X11（本移植新增，DLL 默认已是走 broker）；`direct` 才会退回 Wine |
 | `UURB_CURSOR_GUARD` | `on` | ★ 让电脑客户端能看到鼠标指针（默认 `off`） |
+| `UURB_UU_AUDIO` | `system` | ★ 关掉 UU 的音频采集（被控端麦克风不再被常开占用）：`off` + 静默 ALSA 后端，见 `TROUBLESHOOTING.md` 第 17 条 |
 | `UURB_VNC_GRAB_KEYBOARD` | `on` | x11vnc 抓键盘 |
 | `UURB_PHYSICAL_KEY_DELAY_MS` | `0` | 按键节奏；若个别应用漏键可试着调到 `8~20` |
 
