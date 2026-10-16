@@ -442,6 +442,49 @@ systemctl --user daemon-reload && systemctl --user restart uu-remote-bridge.serv
 
 ---
 
+## 18. 远控明显比远控 Windows 卡
+
+先接受一个事实：这是**结构性**的，只能缓解不能根治。
+
+```
+Windows 被控端：DXGI 抓屏 → NVENC/核显硬编 → 上传          （一两跳）
+本机：:0 桌面 → x11vnc → vncviewer 解码 → Xvfb :20 → UU(Wine) GDI 抓屏 → 软编码 H.264 → 上传
+                                                    （多两跳 + 全程 CPU 软编码）
+```
+
+### 按顺序排查
+
+**① 先看网络（收益最大）**
+```bash
+ip route get <UU 服务器 IP>          # 出现 dev Mihomo / table 2022 = 被代理 TUN 收走了
+ss -unp | grep GameViewer            # 有 UDP = 点对点已通；只有 TCP 443 = 服务器中转
+```
+被 TUN 收走时 UU 打不了洞，只能走服务器中转，RTT（本机实测 64~68ms）就是延迟地板。
+解法见下一节「让 UU 走直连」。
+
+**② 本机 CPU / 内存**
+```bash
+cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor   # powersave 会拖慢突发（插着电也常是它）
+cat /proc/sys/vm/swappiness                                 # 默认 100，swap 用到 1G+ 时偶发停顿
+ps -eo pid,pcpu,comm --sort=-pcpu | head -12                # 谁在抢 CPU
+```
+- `sudo sh -c 'echo performance > /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor'`
+- `sudo sysctl vm.swappiness=10`
+- 远控时退出 **ToDesk**（另一个远控也在常驻抓屏）、暂停 WPS 云同步、关多余浏览器标签。
+
+**③ 控制端设置**：画质选"流畅/标准"、帧率 30fps（别开 60fps 或蓝光）。
+
+**④ 中继跳的编码**（已默认开启）
+`UURB_VNC_ENCODING=raw` —— 让 x11vnc→vncviewer 这一跳（回环）不再做整帧 JPEG 编解码。
+确认生效：`grep "encoding" ~/.local/state/uu-remote-bridge/desktop-x11vnc.log` 应看到
+`Using raw encoding for client`。想回退就改回 `tight` 再 `rrs`。
+
+**⑤ 最后一招**：把 `UURB_RESOLUTION` 降到 `1600x1000`（像素少 31%，每一跳都线性变快，代价是略糊）。
+
+> 日志里的 `*** fb_push ublen NOT ZERO` 是 x11vnc 0.9.16 的老毛病，**一直都在、无害**，别当故障查。
+
+---
+
 ## 附：改动正确性自检（每次改完跑一遍）
 
 ```bash
