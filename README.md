@@ -96,7 +96,7 @@
 | 桥接仓库位置 | `~/Desktop/uu-remote-ubuntu-bridge`（分支 `deepin-port`） | 随便换 | `REPO_DIR` |
 | 指南目录位置 | `~/Desktop/uu-remote-deepin-guide` | 随便换 | 脚本按自身位置自动探测；`bin/uurec` 可用 `UURB_GUIDE_DIR` 显式指定 |
 | 脚本输出目录 | 原来在 AI 会话目录 `~/WorkBuddy/Claw/uu-deepin-port` | 随便换 | 已改到 `LOG_DIR` = `~/.local/state/uu-deepin-port` |
-| ★ **UU 文件（种子源）** | `~/.deepinwine/Spark-potplayer/…/Netease/GameViewer` | **必须自备** | `SEED_SRC`：需要一份 **UU 4.42.1.2835** 的 `GameViewer` 目录（版本与哈希见 `prebuilt/release-manifest.json`）。本机是从 Spark 商店版 potplayer 前缀里拿的；换机若没有现成的，就得自己搞到官方安装包再解开 |
+| ★ **UU 文件（种子源）** | `~/.deepinwine/Spark-potplayer/…/Netease/GameViewer` | 可自动获取 | `SEED_SRC`：需要一份 **UU 4.42.1.2835** 的 `GameViewer` 目录（版本与哈希见 `prebuilt/release-manifest.json`）。本机是从 Spark 商店版 potplayer 前缀里拿的；换机若没有现成的，就得自己搞到官方安装包再解开 |
 | ★ 中继密码 | `uu123456`（示例） | 建议换掉 | `RELAY_PASS`；只是本地回环 `127.0.0.1:5922` 的口令 |
 | ★ root / sudo | 有 | 必须有 | 步骤 1 装依赖 |
 | ★ `systemd --user` | 可用 | 必须有 | 桥接跑在用户服务里 |
@@ -124,7 +124,7 @@ cat "/run/user/$(id -u)/uu-remote-bridge/private-display"   # 私有屏号
 
 ```bash
 cd ~/Desktop
-git clone https://github.com/lachlanchen/uu-remote-ubuntu-bridge.git   # 若还没有
+git clone https://github.com/ThansksJava/uu-remote-ubuntu-bridge.git  # 本人 fork，deepin-port 分支含全部适配与 r0924 清单
 cd uu-remote-ubuntu-bridge
 git checkout deepin-port      # 本机已存在的适配分支
 ```
@@ -154,7 +154,7 @@ sudo bash scripts/01-prep.sh              # 或 sudo bash <指南目录>/scripts
 3. 安装 WineHQ **bookworm** 源与密钥；
 4. `apt-get update`；
 5. 安装桥接依赖：`aria2 cmake meson ninja-build gcc gcc-mingw-w64-x86-64 freerdp3-x11 tigervnc-viewer x11vnc xauth xclip xdotool xvfb openbox python3 jq …`；
-6. 安装 **WineHQ stable（Wine 11）** → `/opt/wine-stable`。
+6. 安装 **WineHQ Wine 11（只装 64 位）** → `/opt/wine-stable`：装 `wine-stable-amd64`，把 `wine-stable` 重新打包去掉 `wine-stable-i386` 依赖后安装，并 `apt-mark hold`（见 TROUBLESHOOTING 第 19 条）。
 
 验证：
 ```bash
@@ -170,21 +170,28 @@ which vncviewer x11vnc xdotool wmctrl   # 都应存在
 
 ```bash
 cd <指南目录>
-bash scripts/03-seed-prefix.sh           # 种子源由 config/guide.env 的 SEED_SRC 指定
+bash scripts/03-seed-prefix.sh           # 在真实桌面的终端里跑；种子源由 config/guide.env 的 SEED_SRC 指定
 ```
 
-它做 4 件事：
-1. 删掉并重建 `~/.local/share/wineprefixes/uu-remote`；
-2. `wineboot -u` 初始化（64 位构建会报 syswow64 警告，属正常）；
-3. `winecfg -v win10` 设为 Windows 10；
-4. 把**已认证的 UU 4.42.1.2835** 从 `~/.deepinwine/Spark-potplayer/drive_c/Program Files/Netease/GameViewer` 拷进新前缀。
+它做 5 件事：
+1. **找种子**：`SEED_SRC` 存在就用它；否则用 `SEED_CACHE`（`~/.cache/uu-remote-seed/GameViewer`）；都没有就自动跑 `scripts/fetch-seed.sh` 现取一份（见下）；
+2. 删掉并重建 `~/.local/share/wineprefixes/uu-remote`；
+3. `wineboot -u` 初始化（64 位构建会报 syswow64 警告，属正常）+ `winecfg -v win10`；
+4. 把 UU 文件拷进新前缀；
+5. **注册 `GameViewerService`**（种子前缀没跑过安装器，不注册桥接起不来，见 TROUBLESHOOTING 第 21 条）。
+
+`scripts/fetch-seed.sh`（需要 sudo、需要网络）：下载 WinGet 收录的版本化安装包
+`UURemote_Setup_4.42.1.2835_0924090324_gwqd.exe` 并校验 SHA-256 → 临时安装 Deepin 源里的 `deepin-wine11-stable`（能跑 32 位安装器）
+→ 临时前缀里 `/S` 静默安装 → 校验 `GameViewerServer.exe` 能匹配桥接仓库某个清单 → 拷到 `SEED_CACHE` →
+卸掉 deepin-wine、删临时前缀和安装器留在桌面/菜单里的「UU远程」快捷方式。
 
 验证：
 ```bash
 ls ~/.local/share/wineprefixes/uu-remote/drive_c/Program\ Files/Netease/GameViewer/bin | wc -l   # 应 > 0
 ```
 
-> 若你机器上没有那份 Spark 前缀（没有现成 UU 文件），就得先搞到 4.42.1.2835 的原版文件放进新前缀——这一步是"绕开 32 位安装器"的关键，请务必保证版本与 `patches/uu-remote-4.42.1.2835.json` 一致。
+> 两种来源的 4.42.1.2835 **不是同一个构建**：Spark 前缀里的是原版（对应 `patches/uu-remote-4.42.1.2835.json`），
+> `fetch-seed.sh` 取到的是 NetEase 重新发布的（对应 `patches/uu-remote-4.42.1.2835-r0924.json`）。`02-install.sh` 会按哈希自动选，不用手动管（见 TROUBLESHOOTING 第 20 条）。
 
 ---
 
@@ -211,9 +218,12 @@ printf 'uu123456\nuu123456\n' | ./install.sh \
 - `--resolution 1920x1200`：中继分辨率（与真实分辨率同）；
 - `printf 'uu123456\nuu123456\n'`：给 VNC 中继设的密码（同一行喂两次），最终落在 `~/.config/uu-remote-bridge/relay-vnc.pass`。
 
+`02-install.sh` 还会先算前缀里 `GameViewerServer.exe` 的 SHA-256，在 `$REPO_DIR/patches/*.json` 里找 `original_sha256` 相同的清单，
+用 `--release-manifest` 传给 `install.sh`（找不到就直接退出，不会硬装）。
+
 安装器内部会：
 1. 检测到前缀里已有 `GameViewer.exe` → **跳过下载与运行官方安装器**；
-2. 用 `scripts/patch-gameviewer.py` + `patches/uu-remote-4.42.1.2835.json` 给 `GameViewerServer.exe` 打补丁；
+2. 用 `scripts/patch-gameviewer.py` + 选中的清单给 `GameViewerServer.exe` 打补丁；
 3. 用 `scripts/build-compat.sh` 编译全部 compat 组件到 `build/compat/`，并安装到 `$WINEPREFIX/compat/`；
 4. 安装 `~/.local/bin/` 下的命令、写 `~/.config/uu-remote-bridge/environment`、装 systemd user 单元；
 5. 启动 `uu-remote-bridge.service`。
@@ -265,18 +275,29 @@ UURB_CONSOLE_WEB_PORT=6080         # 同上（web）
 
 ### 步骤 5 · 首次登录（扫二维码）
 
-服务起来后，UU 客户端窗口在私有屏 :20 上（你会在真实桌面看到的那个 "UU Remote - TigerVNC" 窗口里）。
+服务起来后，UU 客户端窗口在私有屏 :20 上。**不要**在桌面的 "UU Remote - TigerVNC" 投屏窗口里点：
+它只投 UU 主窗口，登录框/首次引导框是别的窗口看不到，而且点击会先打中私有屏最上层的中继（见 TROUBLESHOOTING 第 22 条）。
 
-获取登录二维码（登录窗标题是 `GameViewer`）：
+**首次启动**会先弹一个「欢迎使用网易UU远程」引导框，并可能导致私有屏的 openbox 崩溃。`uuqr` 只处理登录框，
+引导框要先关掉：隐藏中继后把引导框提到最上层，点「跳过引导，自由探索」：
 
 ```bash
-# 抓登录窗二维码（脚本会自己按登录窗的实时几何截取，不写死坐标）
-bash <指南目录>/scripts/09-clickbtn.sh
-# 结果在 ~/.local/state/uu-deepin-port/login.png，直接打开看就行
+export DISPLAY=$(cat /run/user/$(id -u)/uu-remote-bridge/private-display) XAUTHORITY=/run/user/$(id -u)/uu-remote-bridge/Xauthority
+xdotool windowunmap $(xdotool search --name TigerVNC | head -1)
+W=$(xdotool search --onlyvisible --name '^GameViewer$' | tail -1); xdotool windowraise $W
+eval $(xdotool getwindowgeometry --shell $W); xdotool mousemove $((X+533)) $((Y+520)) click 1
 ```
 
-用手机 **网易UU远程 App** 扫码登录（二维码 1-2 分钟过期；过期就在窗口里点"点击刷新"再抓一次）。
-登录成功后，UU 客户端主窗会变成"本机被控中"。
+然后出登录二维码：
+
+```bash
+install -m 755 <指南目录>/bin/* ~/.local/bin/      # 装上 uuqr / rrs / uurec 等快捷命令
+uuqr            # 点「立即登录」+「点击刷新」，截登录框并在桌面打开 login.png
+# 手机 网易UU远程 App 扫码；过期就再跑 uuqr
+uuqr --done     # ★ 登录成功后必做：把中继窗口恢复，否则远端看不到真实桌面
+```
+
+登录成功后，UU 客户端主窗会变成"本机被控中"。**别用 `uu-remote login`**，在这里会秒退（TROUBLESHOOTING 第 23 条）。
 
 ---
 
@@ -340,7 +361,8 @@ systemctl --user enable uu-remote-bridge.service
    | `rrx` | 重启服务 + 把中继窗口重新置顶 + 写报告到 `~/uu-stack.txt` |
    | `rrd` | 只 dump 私有屏 :20 的窗口堆叠顺序到 `~/uu-stack.txt` |
    | `rrp` | 抓私有屏画面（=客户端看到的画面）到 `~/uu-before.png` / `~/uu-after.png` |
-   | `uurec` | 抓 :20 上的登录二维码到 `login.png` |
+   | `uuqr` | 出登录二维码（自动点「立即登录」/「刷新」并在桌面打开）；登录后 `uuqr --done` 恢复中继 |
+   | `uurec` | 只抓 :20 上已打开的登录框到 `login.png` |
 
 ---
 
@@ -358,6 +380,12 @@ systemctl --user enable uu-remote-bridge.service
 | 看不到登录弹窗 / 黑框 | 投屏指向了已失效的窗口 | 跑 `04-open.sh` 或 `05-recover.sh` 重建投屏 |
 | 服务反复起不来 | openbox 崩了 | 跑 `05-recover.sh`（内含 openbox 自愈） |
 | 改了脚本没效果 | 服务跑的是 `~/.local/bin/uu-remote-bridge`（**独立拷贝**） | 必须 `cp` 覆盖到 `~/.local/bin/` 再重启服务 |
+| `01-prep.sh` 报 `winehq-stable : 依赖: wine-stable` | `wine-stable` 硬依赖 i386 | 用新版 `01-prep.sh`（重打包去 i386 依赖），见第 19 条 |
+| 安装包 / `GameViewerServer.exe` 哈希对不上 | 官方链接已是新版；4.42.1.2835 被重新发布过 | 用 `fetch-seed.sh` 的版本化地址 + r0924 清单，见第 20 条 |
+| `background processes did not become ready` | 种子前缀没注册 `GameViewerService` | 新版 `03-seed-prefix.sh` 会注册；已装好的手动补，见第 21 条 |
+| 桌面 UU 窗口点不动 / 看不到二维码 | 引导框被压住 + 中继挡点击 + 投屏只抓主窗 | `uuqr` 出码，登录后 `uuqr --done`，见第 22 条 |
+| 手机连上只见黑底 + UU 窗口 | 中继窗口还被 `uuqr` 隐藏着 | `uuqr --done` |
+| `uu-remote login` 一闪就没 | 启动器秒退、客户端静默退出 | 不用它，改用 `uuqr`，见第 23 条 |
 
 ---
 
@@ -375,6 +403,14 @@ systemctl --user enable uu-remote-bridge.service
 | `44b54cf` | `src/uu_input_bridge.c` | SendInput"假成功"（result==count 但 last-error≠0）时也走 broker 兜底 |
 | `1924654` | `scripts/uu-remote-bridge`、`src/uu_input_bridge.c` | 中继窗口**无条件置顶**，压住 UU 管理窗；鼠标默认走 broker |
 | `bda55a6` | `src/uu_input_bridge.c` | **物理键盘**默认走 broker（X11 直连） |
+
+之后 fork（`ThansksJava/uu-remote-ubuntu-bridge` 的 `deepin-port`）上还有几个提交没导出成补丁，其中跟安装直接相关的是：
+
+| 提交 | 文件 | 内容 |
+|---|---|---|
+| `cfd394f` | `patches/uu-remote-4.42.1.2835-r0924.json` | NetEase 重新发布的 4.42.1.2835 构建的补丁清单（TROUBLESHOOTING 第 20 条） |
+
+所以**优先直接 clone fork 的 `deepin-port` 分支**；只用 `git am` 打 6 个补丁的话，还得把这份清单单独拷过去。
 
 改动量（`git diff --stat main..deepin-port`）：
 
@@ -431,13 +467,15 @@ uu-remote-deepin-guide/
 │   ├── 07-raise.sh            ← 把 UU 窗口置顶并验证 → raise.log
 │   ├── 08-inputtest.sh        ← 在 :20 上对按钮做 XTEST 点击测试
 │   ├── 09-clickbtn.sh         ← 抓登录二维码（登录窗）→ login.png
+│   ├── fetch-seed.sh          ← 没有现成种子时，从官方安装包取 UU 文件（03 会自动调用）
 │   └── gameviewer-service.reg ← Wine 服务注册表项（GameViewerService）
 ├── bin/                       ← 日常包装命令（拷到 ~/.local/bin 即可用）
 │   ├── rrs / uurr             ← 重启桥接服务
 │   ├── rrx                    ← 重启 + 重排窗口 + 报告
 │   ├── rrd                    ← dump 私有屏窗口堆叠
 │   ├── rrp                    ← 抓 :20 画面（客户端视角）
-│   └── uurec                  ← 抓登录二维码
+│   ├── uurec                  ← 抓登录二维码
+│   └── uuqr                   ← 一键出登录二维码（推荐）；uuqr --done 恢复中继
 ├── config/                    ← 直接可用的配置
 │   ├── guide.env              ← ★ 统一变量（路径/密码/分辨率/种子源…脚本会自动读取）
 │   ├── environment            ← ~/.config/uu-remote-bridge/environment

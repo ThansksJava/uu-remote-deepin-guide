@@ -37,8 +37,27 @@ apt-get install -y \
     python3 python3-attr python3-gi python3-jinja2 tar tigervnc-viewer \
     x11-utils x11vnc xauth xclip xdotool xvfb zstd
 
-echo "-- [6/6] 安装 WineHQ stable（Wine 11 → /opt/wine-stable）"
-apt-get install -y --install-recommends winehq-stable
+echo "-- [6/6] 安装 WineHQ stable（Wine 11 → /opt/wine-stable，只装 64 位）"
+# winehq-stable → wine-stable 硬依赖 wine-stable-i386，而 Deepin 装不了 i386 运行库
+# （见 TROUBLESHOOTING 第 1、19 条）。UU 是 64 位程序，只需要 wine-stable-amd64；
+# wine-stable 本身只是 bin/ 下的 wine/wineserver 等入口，重新打包去掉 i386 依赖后安装，
+# 再 hold 住，免得 apt upgrade 把它换回原版、又卡在依赖上。
+apt-get install -y wine-stable-amd64
+if ! /opt/wine-stable/bin/wine --version >/dev/null 2>&1; then
+    WORK="$(mktemp -d)"
+    AMD64_VER="$(dpkg-query -W -f='${Version}' wine-stable-amd64)"
+    (cd "$WORK" && apt-get download "wine-stable=$AMD64_VER")
+    dpkg-deb -R "$WORK"/wine-stable_*.deb "$WORK/repack"
+    sed -i -E \
+        -e 's/wine-stable-i386 \(= [^)]*\), //' \
+        -e 's/^(Version: .*)$/\1+noi386/' \
+        "$WORK/repack/DEBIAN/control"
+    grep -E '^(Version|Depends):' "$WORK/repack/DEBIAN/control"
+    dpkg-deb -b "$WORK/repack" "$WORK/wine-stable_noi386.deb" >/dev/null
+    apt-get install -y "$WORK/wine-stable_noi386.deb"
+    apt-mark hold wine-stable
+    rm -rf "$WORK"
+fi
 
 # 把当前登录用户的 ~/.Xauthority 属主纠正过来（原实现写死了用户名/家目录）
 TARGET_USER="${SUDO_USER:-$(logname 2>/dev/null || echo "$USER")}"

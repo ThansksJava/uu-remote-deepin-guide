@@ -22,7 +22,9 @@
 bash ~/Desktop/uu-remote-deepin-guide/scripts/04-open.sh
 ```
 
-或者直接双击桌面上的 **UU Remote** 图标（等 20～30 秒）。
+或者直接双击桌面上的 **UU Remote** 图标（等 20～30 秒）。它只适合**看状态**（是否「本机被控中」、连着哪些设备），在这个窗口里点击基本无效；要登录用下面的 `uuqr`。
+
+> 桌面上若还有一个叫 **UU远程**（不是 UU Remote）的图标，那是取种子时临时安装器留下的，指向另一份 UU，双击会抢账号——删掉它（`scripts/fetch-seed.sh` 现在会自动清理）。
 
 这条是"一键自愈"：服务没起就起服务、openbox 掉了就补、客户端掉了就补、最后把管理窗口投到桌面。全程约 1 分钟，看到 `✅ UU 窗口已显示在桌面上` 就成了。
 
@@ -39,32 +41,36 @@ rrx                     # 重启服务 + 重排窗口 + 出报告（写到 ~/uu-
 
 **怎么判断**：UU 窗口里出现登录界面/二维码，或手机端设备列表里本机显示离线、点了没反应。
 
-### 方式 1 · 抓二维码扫码（推荐，一直用的这个）
+### 方式 1 · `uuqr` 一键出码（推荐）
+
+```bash
+uuqr            # 出二维码并在桌面打开
+# 手机扫码登录成功后：
+uuqr --done     # ★ 必做：恢复中继窗口
+```
+
+它会：临时隐藏私有屏上挡住点击的中继窗口 → 没有登录窗就点「立即登录」→ 点「点击刷新」→
+把登录窗截成 `~/.local/state/uu-deepin-port/login.png` 并在桌面打开。
+
+1. 手机 **网易UU远程 App** → 扫一扫 → 扫屏幕上的这张图
+2. 二维码 **1～2 分钟就过期**，过期了再跑一次 `uuqr`
+3. 登录成功后**一定要跑 `uuqr --done`**——不恢复中继，手机连上只能看到 UU 自己的窗口（黑底 + 「本机被控中」），看不到真实桌面
+
+> 为什么不能直接在桌面的 UU 窗口里点：投屏窗口只抓 UU 主窗口，登录框是另一个窗口，投屏里看不到；
+> 而且私有屏最上层是全屏中继，点击会被它转到真实桌面上（见 TROUBLESHOOTING 第 22 条）。
+
+### 方式 2 · `uurec` 只抓不点
 
 ```bash
 uurec
 ```
 
-它把登录二维码抓成图片：`~/.local/state/uu-deepin-port/login.png`
+登录窗已经开着时，只把它截成 `login.png`。登录窗被中继压着时截到的可能不是二维码，这时用方式 1。
 
-1. 打开这张图（双击，用看图的软件）
-2. 手机 **网易UU远程 App** → 扫一扫 → 扫屏幕上的这张二维码
-3. 二维码 **1～2 分钟就过期**。过期了先在 UU 窗口里点一下"点击刷新"，再 `uurec` 抓一次
-4. 登录成功后，UU 窗口会变成"本机被控中"
+### ~~方式 3 · `uu-remote login`~~（本机不可用）
 
-### 方式 2 · 直接扫屏幕
-
-先 `bash $G/scripts/04-open.sh` 把管理窗口投到桌面；如果二维码就在那个窗口里，直接用手机扫**显示器**就行。
-
-### 方式 3 · 在真实桌面上直接登录
-
-```bash
-uu-remote login
-```
-
-会在真实桌面上直接开一个 UU 登录窗，鼠标键盘都正常可用；登录完把那个窗口关掉，会自动重启桥接。
-
-> ⚠️ 它会先**停掉桥接**，正在远控的客户端会断开，登录后重连即可。
+上游的 `uu-remote login` 在这里会**秒退**：它运行的顶层 `GameViewer.exe` 只是启动器，启动器一退出脚本就把 Wine 停了；
+直接运行 `bin/GameViewer.exe` 客户端也会静默退出（见 TROUBLESHOOTING 第 23 条）。别用它，它还会停掉桥接。
 
 ---
 
@@ -104,7 +110,8 @@ grep rfbEncodingExtDesktopSize ~/.local/state/uu-remote-bridge/desktop-x11vnc.lo
 | 看服务状态 | `uu-remote status` |
 | 重启桥接服务 | `rrs`（同 `uurr`） |
 | 重启 + 重排窗口 + 报告 | `rrx` → `~/uu-stack.txt` |
-| 抓登录二维码 | `uurec` → `~/.local/state/uu-deepin-port/login.png` |
+| 出登录二维码（推荐） | `uuqr` → 扫码 → `uuqr --done` |
+| 只抓登录窗 | `uurec` → `~/.local/state/uu-deepin-port/login.png` |
 | 看私有屏窗口层级 | `rrd` → `~/uu-stack.txt` |
 | 截私有屏图 | `rrp` → `~/uu-before.png`、`~/uu-after.png` |
 | 服务单元文件 | `~/.config/systemd/user/uu-remote-bridge.service` |

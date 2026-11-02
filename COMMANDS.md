@@ -21,18 +21,19 @@
 
 ```bash
 # 0) 准备仓库（已有 deepin-port 分支可跳过）
-cd ~/Desktop && git clone https://github.com/lachlanchen/uu-remote-ubuntu-bridge.git
+cd ~/Desktop && git clone https://github.com/ThansksJava/uu-remote-ubuntu-bridge.git
 cd uu-remote-ubuntu-bridge && git checkout deepin-port
 #    若只有上游 main，则用补丁建分支：
 #    git checkout -b deepin-port && git am $G/patches/*.patch
 
-# 1) 系统依赖 + Wine 11（需要 sudo）
+# 1) 系统依赖 + Wine 11（需要 sudo；只装 64 位 Wine，wine-stable 重打包去掉 i386 依赖并 hold）
 sudo bash $G/scripts/01-prep.sh
 
-# 2) 建 Wine 前缀 + 种子 UU 4.42.1.2835 文件（普通用户）
+# 2) 建 Wine 前缀 + 种子 UU 4.42.1.2835 文件 + 注册 GameViewerService（普通用户，真实桌面终端）
+#    没有 SEED_SRC 时会自动跑 fetch-seed.sh（下载官方安装包，临时借 deepin-wine11-stable 静默安装取文件，会要 sudo）
 bash $G/scripts/03-seed-prefix.sh
 
-# 3) 跑桥接安装器（必须在真实桌面的终端里，普通用户）
+# 3) 跑桥接安装器（必须在真实桌面的终端里，普通用户；按 GameViewerServer.exe 哈希自动选 --release-manifest）
 bash $G/scripts/02-install.sh
 #    等价于：
 #    cd $REPO
@@ -45,12 +46,13 @@ cp $G/config/environment ~/.config/uu-remote-bridge/environment
 systemctl --user restart uu-remote-bridge.service
 
 # 5) 安装日常快捷命令
-install -m 755 $G/bin/rrs $G/bin/uurr $G/bin/rrx $G/bin/rrd $G/bin/rrp $G/bin/uurec ~/.local/bin/
+install -m 755 $G/bin/rrs $G/bin/uurr $G/bin/rrx $G/bin/rrd $G/bin/rrp $G/bin/uurec $G/bin/uuqr ~/.local/bin/
 #    uurec 会自动在 UURB_GUIDE_DIR / 自身上级目录 / ~/.local/share 等处找指南目录，
 #    换机后也可以 export UURB_GUIDE_DIR=<指南目录> 显式指定。
 
-# 6) 抓登录二维码 → 手机 UU App 扫码
-bash $G/scripts/09-clickbtn.sh && ls -l ~/.local/state/uu-deepin-port/login.png
+# 6) 出登录二维码 → 手机 UU App 扫码 → 恢复中继（首次启动先关「欢迎使用」引导框，见 README 步骤 5）
+uuqr
+uuqr --done
 
 # 7) 开机自启
 systemctl --user enable uu-remote-bridge.service
@@ -65,7 +67,9 @@ rrs                    # 重启桥接服务（= uurr）
 rrx                    # 重启 + 中继窗口重新置顶 + 报告 → ~/uu-stack.txt
 rrd                    # 只看窗口堆叠 → ~/uu-stack.txt
 rrp                    # 抓私有屏画面（客户端视角）→ ~/uu-before.png / ~/uu-after.png
-uurec                  # 抓登录二维码 → login.png
+uuqr                   # ★ 出登录二维码（自动点「立即登录」/「刷新」，桌面打开 login.png）
+uuqr --done            # ★ 扫码登录成功后必跑：恢复中继窗口
+uurec                  # 只抓已打开的登录框 → login.png
 uurec 等价于： bash $G/scripts/09-clickbtn.sh
 
 # 状态

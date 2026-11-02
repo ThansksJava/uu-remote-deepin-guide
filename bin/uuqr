@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# 重新生成 UU 登录二维码并在桌面打开 → ~/.local/state/uu-deepin-port/login.png
+# 私有屏上的中继窗口会挡住点击，所以先把它临时隐藏；登录成功后跑 `uuqr --done` 恢复。
+set -u
+BR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/uu-remote-bridge"
+export DISPLAY="$(cat "$BR/private-display" 2>/dev/null || echo :20)" XAUTHORITY="$BR/Xauthority"
+OUT="$HOME/.local/state/uu-deepin-port/login.png"
+mkdir -p "$(dirname "$OUT")"
+
+relay=$(xdotool search --name 'TigerVNC' 2>/dev/null | head -1)
+
+if [ "${1:-}" = "--done" ]; then
+    [ -n "$relay" ] && xdotool windowmap "$relay" && xdotool windowraise "$relay"
+    echo "中继窗口已恢复"
+    exit 0
+fi
+
+[ -n "$relay" ] && xdotool windowunmap "$relay" 2>/dev/null
+
+login=$(xdotool search --onlyvisible --name '^GameViewer$' 2>/dev/null | tail -1)
+if [ -z "$login" ]; then
+    # 没有登录窗：在主窗口里点「立即登录」
+    main=$(xdotool search --onlyvisible --name '网易UU远程' 2>/dev/null | tail -1)
+    if [ -z "$main" ]; then
+        echo "找不到 UU 主窗口：先跑 rrs，等 1 分钟再试"; exit 1
+    fi
+    eval "$(xdotool getwindowgeometry --shell "$main")"
+    xdotool windowraise "$main"; sleep 1
+    xdotool mousemove $((X + 580)) $((Y + 520)) click 1
+    sleep 6
+    login=$(xdotool search --onlyvisible --name '^GameViewer$' 2>/dev/null | tail -1)
+    if [ -z "$login" ]; then
+        echo "没弹出登录窗——可能已经登录了。确认后跑 uuqr --done 恢复中继"; exit 1
+    fi
+fi
+
+eval "$(xdotool getwindowgeometry --shell "$login")"
+xdotool windowraise "$login"; sleep 1
+# 「点击刷新」的位置（二维码中间）；二维码未过期时点这里也无害
+xdotool mousemove $((X + 234)) $((Y + 314)) click 1
+sleep 4
+import -window root -crop "680x480+$((X + 64))+$((Y + 32))" +repage "$OUT"
+DISPLAY=:0 XAUTHORITY="$HOME/.Xauthority" setsid xdg-open "$OUT" >/dev/null 2>&1 &
+echo "二维码已打开：$OUT（1～2 分钟过期，过期再跑一次 uuqr）"
+echo "登录成功后运行：uuqr --done"

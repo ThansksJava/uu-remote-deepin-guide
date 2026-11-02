@@ -49,6 +49,11 @@ grep -c 'category=keyboard' $P/drive_c/users/$U/Temp/uu-input-broker.log
   本机这份文件来自 `~/.deepinwine/Spark-potplayer/…/Netease/GameViewer`（Spark 商店版 potplayer 前缀），
   已抽成配置项 `SEED_SRC`（见 `config/guide.env`）——**换机时这是最需要确认的一条前置条件**。
   版本必须与 `prebuilt/release-manifest.json` 一致（安装器会校验哈希并给 `GameViewerServer.exe` 打补丁）。
+- **没有现成种子时**（2026-10 重装验证过）：`03-seed-prefix.sh` 会自动调用 `scripts/fetch-seed.sh`——
+  下载官方安装包，临时装 Deepin 源里的 **`deepin-wine11-stable`**（自带新式 WoW64，含 `i386-windows`，
+  **不需要任何 i386 运行库**，能跑 32 位安装器），在临时前缀里 `/S` 静默安装后取出 `GameViewer` 目录，
+  再把 deepin-wine 和临时前缀清理掉。所以"32 位安装器跑不了"只对 WineHQ 的 64 位 Wine 成立。
+  注意：7z 解不开这个安装器的 NSIS 载荷（`Can't open as archive`），别在这条路上浪费时间。
 - **验证**：
   ```bash
   sha256sum "$P/drive_c/Program Files/Netease/GameViewer/GameViewerServer.exe"  # 与 manifest 对比
@@ -482,6 +487,92 @@ ps -eo pid,pcpu,comm --sort=-pcpu | head -12                # 谁在抢 CPU
 **⑤ 最后一招**：把 `UURB_RESOLUTION` 降到 `1600x1000`（像素少 31%，每一跳都线性变快，代价是略糊）。
 
 > 日志里的 `*** fb_push ublen NOT ZERO` 是 x11vnc 0.9.16 的老毛病，**一直都在、无害**，别当故障查。
+
+---
+
+## 19. `01-prep.sh` 装不上 Wine：`winehq-stable : 依赖: wine-stable (= 11.0.0.0~bookworm-1)`
+
+- **现象**：步骤 1 最后一步报依赖无法满足，`/opt/wine-stable/bin/wine` 不存在。
+- **根因**：`winehq-stable` → `wine-stable`，而 `wine-stable` **硬依赖** `wine-stable-i386`，后者要一整套 i386 运行库，Deepin 装不了（见第 1 条）。
+  其实 UU 是 64 位程序，只要 `wine-stable-amd64`（库）+ `wine-stable`（`bin/wine`、`wineserver` 等入口）。
+- **修复**：`01-prep.sh` 现在只装 `wine-stable-amd64`，再把 `wine-stable` 下载下来**重新打包去掉 i386 依赖**（版本号加 `+noi386`）后安装，并 `apt-mark hold wine-stable`。apt 的依赖状态保持干净（不用 `--force-depends`）。
+- **验证**：
+  ```bash
+  /opt/wine-stable/bin/wine --version        # wine-11.0
+  dpkg -l wine-stable | tail -1              # 版本带 +noi386
+  apt-mark showhold | grep wine-stable
+  ```
+- **注意**：Wine 升级时要先 `sudo apt-mark unhold wine-stable`，再重跑 `01-prep.sh` 的第 6 步逻辑。
+
+---
+
+## 20. 官方安装包哈希对不上 / 打补丁报错
+
+- **现象**：`install.sh` 报 `UU installer hash mismatch`；或者种子文件版本号明明是 4.42.1.2835，`patch-gameviewer.py verify` 仍不认。
+- **根因**（两层）：
+  1. 官方链接 `https://api.nrd.nie.163.com/api/v1/release/dl/1?channel=gwqd` 永远是**最新版**（2026-10 已是 4.44.0.3919），而仓库只审过到 4.42.1.2835 的补丁；
+  2. NetEase **重新发布过 4.42.1.2835**（`UURemote_Setup_4.42.1.2835_0924090324_gwqd.exe`，sha256 `daa4b299…`），
+     里面的 `GameViewerServer.exe`（sha256 `86fae0c9…`）和原清单记录的（`0ee0a46a…`）不是同一个构建。
+- **修复**：
+  - 版本化下载地址从 WinGet 清单里找：`microsoft/winget-pkgs` 仓库 `manifests/n/NetEase/UURemote/<版本>/NetEase.UURemote.installer.yaml`；已写进 `config/guide.env` 的 `SEED_INSTALLER_URL / SEED_INSTALLER_SHA256`。
+  - 重新构建版的三处补丁特征字节都**唯一存在**、整体只后移 16 字节，反汇编语义与原清单一致。已按桥接仓库流程（`audit-gameviewer.py inspect/finalize`，副本上测过 patch/verify/restore）生成
+    **`patches/uu-remote-4.42.1.2835-r0924.json`**，提交在桥接仓库 `deepin-port` 分支。
+  - `02-install.sh` 现在**按前缀里 `GameViewerServer.exe` 的哈希自动选清单**，传给 `install.sh --release-manifest`。
+- **遇到更新的构建怎么办**：按桥接仓库 `docs/upstream-maintenance.md` 生成新清单；**不要**改已有清单里的哈希。
+- **验证**：
+  ```bash
+  S="$P/drive_c/Program Files/Netease/GameViewer/bin/GameViewerServer.exe"
+  sha256sum "$S.uu-original"      # 原版哈希，应能在 $REPO/patches/*.json 的 original_sha256 里找到
+  python3 $REPO/scripts/patch-gameviewer.py verify "$S" --manifest $REPO/patches/uu-remote-4.42.1.2835-r0924.json
+  ```
+
+---
+
+## 21. 桥接服务起不来：`UU Remote background processes did not become ready`
+
+- **现象**：`install.sh` 最后报 `FAIL no supported bridge service is active`；`journalctl --user -u uu-remote-bridge` 里每 30 秒左右一次 `did not become ready`，服务反复 auto-restart；`pgrep -f GameViewerServer.exe` 为空。
+- **根因**：种子前缀没跑过官方安装器，**`GameViewerService` 没在 Wine 里注册成服务**，`winlogon.exe` 起不来 UU 后台。
+- **修复**：`03-seed-prefix.sh` 现在拷完文件会用 `wine reg add` 注册它（内容同 `scripts/gameviewer-service.reg`）。已装好的前缀手动补：
+  ```bash
+  systemctl --user stop uu-remote-bridge
+  K='HKLM\System\CurrentControlSet\Services\GameViewerService'
+  W="env WINEPREFIX=$P /opt/wine-stable/bin/wine"
+  $W reg add "$K" /v DisplayName /t REG_SZ /d GameViewerService /f
+  $W reg add "$K" /v ErrorControl /t REG_DWORD /d 1 /f
+  $W reg add "$K" /v ImagePath /t REG_EXPAND_SZ /d '"C:\Program Files\Netease\GameViewer\GameViewerService.exe" --service' /f
+  $W reg add "$K" /v ObjectName /t REG_SZ /d LocalSystem /f
+  $W reg add "$K" /v Start /t REG_DWORD /d 2 /f
+  $W reg add "$K" /v Type /t REG_DWORD /d 16 /f
+  systemctl --user start uu-remote-bridge
+  ```
+- **验证**：`grep -c GameViewerService $P/system.reg` > 0；重启服务后 5～10 秒内 `pgrep -f GameViewerServer.exe` 有输出、服务 `active`。
+
+---
+
+## 22. 桌面上的 UU 窗口（UU Remote - TigerVNC）点不动 / 看不到登录框
+
+- **现象**：双击 **UU Remote** 图标或跑 `04-open.sh` 后，桌面出现「UU Remote - TigerVNC」窗口，画面正常但点什么都没反应；点「立即登录」也不出二维码。
+- **根因**（三层叠加）：
+  1. **首次启动有一个「欢迎使用网易UU远程」引导框**（模态，`GameViewer` 标题，32 位深度窗口）。私有屏上的 openbox 一碰到它就**段错误**（`Openbox received signal 11`），没了窗口管理器，引导框被压到主窗口后面；主窗口在模态框关掉之前不响应点击。
+  2. 投屏用的是 `x11vnc -id <主窗口>`，**只抓 UU 主窗口**，引导框 / 登录框是别的窗口，投屏里永远看不到。
+  3. 私有屏最上层是全屏的中继窗口（`<主机名>:0 - TigerVNC`，桥接故意置顶，远端看的就是它）。投屏里的点击以 XTEST 落到私有屏坐标上，**先打中中继**，于是被转发到真实桌面的同一坐标——UU 根本收不到。
+- **修复**：用 `uuqr`（`bin/uuqr`）。它临时 `windowunmap` 中继窗口 → 在私有屏上直接点「立即登录」/「点击刷新」→ 截登录框 → 桌面打开 `login.png`；扫码成功后 **`uuqr --done`** 把中继映射回来。
+  首次启动的引导框：同样先隐藏中继，再 `xdotool windowraise <引导框>`，点「跳过引导，自由探索」（引导框内坐标约 533,520）。
+- **验证**：`uuqr --done` 之后
+  ```bash
+  DISPLAY=$DISP XAUTHORITY=$BR/Xauthority xdotool search --onlyvisible --name TigerVNC   # 有输出
+  rrp   # 抓私有屏，画面应是真实桌面而不是黑底 + UU 窗口
+  ```
+- **反例**：忘了 `uuqr --done` 时，手机连上看到的是**黑底 + 中间一个「本机被控中」的 UU 窗口**——那就是没恢复中继。
+
+---
+
+## 23. `uu-remote login` 秒退（本机不可用）
+
+- **现象**：跑 `uu-remote login`，桥接被停掉，几秒后又自动起来，桌面上什么窗口也没出现。
+- **根因**：它执行的是 `wine GameViewer.exe`（顶层），那只是**启动器**：拉起 `bin\GameViewer.exe` 后自己马上退出，脚本的 `trap` 随即把整个 Wine 前缀停掉。
+  手动绕开（直接跑 `bin\GameViewer.exe`，带 `upgrade.exe=d` 和 `LIBGL_ALWAYS_SOFTWARE=1`，或先发 `uu-service-control.exe GameViewerService 133`）在 Wine 11 下客户端也会**静默退出**，没有可读日志（UU 日志是加密的 `.slog`）。
+- **结论**：不用它。登录统一走第 22 条的 `uuqr`。
 
 ---
 
