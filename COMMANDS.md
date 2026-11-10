@@ -72,6 +72,14 @@ uuqr --done            # ★ 扫码登录成功后必跑：恢复中继窗口
 uurec                  # 只抓已打开的登录框 → login.png
 uurec 等价于： bash $G/scripts/09-clickbtn.sh
 
+# 停用 / 自启开关
+systemctl --user stop    uu-remote-bridge.service   # 立即停掉
+WINEPREFIX=~/.local/share/wineprefixes/uu-remote /opt/wine-stable/bin/wineserver -k   # 清残留 Wine 进程
+systemctl --user disable uu-remote-bridge.service   # 关开机自启（只 stop 的话下次登录会自动再起）
+systemctl --user start   uu-remote-bridge.service   # 临时再开（或 rrs）
+systemctl --user enable  uu-remote-bridge.service   # 恢复开机自启
+systemctl --user daemon-reload                      # 提示 unit file changed on disk 时先跑这个
+
 # 状态
 systemctl --user status uu-remote-bridge.service --no-pager | head -8
 systemctl --user is-active  uu-remote-bridge.service

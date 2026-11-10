@@ -339,6 +339,22 @@ cat ~/.local/share/wineprefixes/uu-remote/drive_c/users/$(id -un)/AppData/Local/
 systemctl --user enable uu-remote-bridge.service
 ```
 
+### 停用 / 关闭开机自启
+
+不想让本机被远程控制时：
+
+```bash
+systemctl --user stop uu-remote-bridge.service      # 立即停掉（UU、私有屏、中继都会退出）
+WINEPREFIX=~/.local/share/wineprefixes/uu-remote /opt/wine-stable/bin/wineserver -k   # 保险：清掉残留 Wine 进程
+systemctl --user disable uu-remote-bridge.service   # 关掉开机自启，下次登录不再自动拉起
+systemctl --user is-active uu-remote-bridge.service; systemctl --user is-enabled uu-remote-bridge.service   # 期望 inactive / disabled
+```
+
+- 只 `stop` 不 `disable`：下次登录桌面会自动再起来。
+- 恢复：临时用一次 `systemctl --user start uu-remote-bridge.service`（或 `rrs`）；恢复自启 `systemctl --user enable uu-remote-bridge.service`。
+- 如果 stop 时提示 `unit file ... changed on disk`，先跑 `systemctl --user daemon-reload`，不影响停止。
+- 自启只来自这个 systemd 用户服务，`~/.config/autostart/` 里没有别的 UU 自启项。
+
 ---
 
 ## 五、日常使用

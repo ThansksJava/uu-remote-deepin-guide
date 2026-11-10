@@ -10,7 +10,7 @@
 
 ### 正常情况下：什么都不用做
 
-桥接服务 `uu-remote-bridge.service` 是 systemd **用户级**服务，已设置开机自启。你登录图形桌面后它会自动：起私有屏 → 起 openbox → 拉起 UU 客户端 → 接管真实桌面 `:0`。
+桥接服务 `uu-remote-bridge.service` 是 systemd **用户级**服务，已设置开机自启（关掉见下方速查表「停用远程」两行）。你登录图形桌面后它会自动：起私有屏 → 起 openbox → 拉起 UU 客户端 → 接管真实桌面 `:0`。
 
 等 30～60 秒，手机 App / 另一台电脑用同一 UU 账号连本机，通常直接就能控。
 
@@ -109,6 +109,8 @@ grep rfbEncodingExtDesktopSize ~/.local/state/uu-remote-bridge/desktop-x11vnc.lo
 | 一键自愈（推荐） | `bash ~/Desktop/uu-remote-deepin-guide/scripts/04-open.sh` |
 | 看服务状态 | `uu-remote status` |
 | 重启桥接服务 | `rrs`（同 `uurr`） |
+| 停用远程（立即） | `systemctl --user stop uu-remote-bridge` |
+| 关开机自启 / 恢复 | `systemctl --user disable uu-remote-bridge` / `enable` |
 | 重启 + 重排窗口 + 报告 | `rrx` → `~/uu-stack.txt` |
 | 出登录二维码（推荐） | `uuqr` → 扫码 → `uuqr --done` |
 | 只抓登录窗 | `uurec` → `~/.local/state/uu-deepin-port/login.png` |
